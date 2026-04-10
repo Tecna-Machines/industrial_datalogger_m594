@@ -310,11 +310,12 @@ def construir_fecha_desde_dtl(valores: Dict[str, Any], base_event: str) -> Optio
     """
     try:
         # Buscar componentes DTL para este evento
-        year_tag = f"OPC_DATOS.REGISTRO_EVENTOS.FALLAS.{base_event}.FechaYHora.YEAR"
-        month_tag = f"OPC_DATOS.REGISTRO_EVENTOS.FALLAS.{base_event}.FechaYHora.MONTH"
-        day_tag = f"OPC_DATOS.REGISTRO_EVENTOS.FALLAS.{base_event}.FechaYHora.DAY"
-        hour_tag = f"OPC_DATOS.REGISTRO_EVENTOS.FALLAS.{base_event}.FechaYHora.HOUR"
-        minute_tag = f"OPC_DATOS.REGISTRO_EVENTOS.FALLAS.{base_event}.FechaYHora.MINUTE"
+        # El base_event ya incluye el prefijo completo
+        year_tag = f"{base_event}.FechaYHora.YEAR"
+        month_tag = f"{base_event}.FechaYHora.MONTH"
+        day_tag = f"{base_event}.FechaYHora.DAY"
+        hour_tag = f"{base_event}.FechaYHora.HOUR"
+        minute_tag = f"{base_event}.FechaYHora.MINUTE"
         
         # Obtener valores
         year = valores.get(year_tag)
@@ -326,13 +327,13 @@ def construir_fecha_desde_dtl(valores: Dict[str, Any], base_event: str) -> Optio
         # Validar que tengamos los componentes necesarios
         if all(v is not None for v in [year, month, day, hour, minute]):
             # Convertir a enteros
-            year = int(year) if year != 0 else 2024  # Año por defecto si es 0
-            month = int(month) if month != 0 else 1
-            day = int(day) if day != 0 else 1
+            year = int(year)
+            month = int(month)
+            day = int(day)
             hour = int(hour)
             minute = int(minute)
             
-            # Crear datetime
+            # Crear datetime con cualquier fecha del PLC (incluyendo 1970-01-01)
             fecha_dt = dt(year, month, day, hour, minute, 0)
             log.debug(f"Fecha reconstruida para {base_event}: {fecha_dt}")
             return fecha_dt
@@ -605,17 +606,16 @@ def procesar_intervalo_programado(valores: Dict[str, Any], tabla_config: Dict[st
                 
                 # Reconstruir fecha desde componentes DTL si existen
                 if "_dtl_componentes" in datos_evento:
-                    # Extraer nombre del evento base para reconstruir fecha
-                    evento_nombre = evento_base.split("OPC_DATOS.REGISTRO_EVENTOS.FALLAS.")[-1]
-                    fecha_reconstruida = construir_fecha_desde_dtl(valores, evento_nombre)
+                    # Usar el evento_base completo para construir los tags
+                    fecha_reconstruida = construir_fecha_desde_dtl(valores, evento_base)
                     
                     if fecha_reconstruida:
                         datos_completos["fecha_y_hora"] = fecha_reconstruida
-                        log.info(f"Fecha reconstruida para {evento_nombre}: {fecha_reconstruida}")
+                        log.info(f"Fecha reconstruida para {evento_base}: {fecha_reconstruida}")
                     else:
-                        # Fallback a fecha actual si no se puede reconstruir
-                        datos_completos["fecha_y_hora"] = ahora
-                        log.warning(f"Usando fecha actual para {evento_nombre} - no se pudieron reconstruir componentes DTL")
+                        # No se pudo reconstruir fecha, dejar como None
+                        datos_completos["fecha_y_hora"] = None
+                        log.warning(f"No se pudieron reconstruir componentes DTL para {evento_base}")
                 
                 eventos_registrados.append(datos_completos)
         
