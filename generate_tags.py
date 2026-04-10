@@ -66,4 +66,5 @@ async def main():
 
 
 if __name__ == "__main__":
+    print(f'EndPoint a conectar: {ENDPOINT}')
     asyncio.run(main())

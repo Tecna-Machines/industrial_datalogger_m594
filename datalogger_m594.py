@@ -304,6 +304,46 @@ async def leer_tags_tabla(tags: List[str], mapeo: Dict[str, str]) -> Dict[str, A
     
     return valores
 
+def construir_fecha_desde_dtl(valores: Dict[str, Any], base_event: str) -> Optional[dt]:
+    """
+    Construye un objeto datetime desde componentes DTL individuales
+    """
+    try:
+        # Buscar componentes DTL para este evento
+        year_tag = f"OPC_DATOS.REGISTRO_EVENTOS.FALLAS.{base_event}.FechaYHora.YEAR"
+        month_tag = f"OPC_DATOS.REGISTRO_EVENTOS.FALLAS.{base_event}.FechaYHora.MONTH"
+        day_tag = f"OPC_DATOS.REGISTRO_EVENTOS.FALLAS.{base_event}.FechaYHora.DAY"
+        hour_tag = f"OPC_DATOS.REGISTRO_EVENTOS.FALLAS.{base_event}.FechaYHora.HOUR"
+        minute_tag = f"OPC_DATOS.REGISTRO_EVENTOS.FALLAS.{base_event}.FechaYHora.MINUTE"
+        
+        # Obtener valores
+        year = valores.get(year_tag)
+        month = valores.get(month_tag)
+        day = valores.get(day_tag)
+        hour = valores.get(hour_tag)
+        minute = valores.get(minute_tag)
+        
+        # Validar que tengamos los componentes necesarios
+        if all(v is not None for v in [year, month, day, hour, minute]):
+            # Convertir a enteros
+            year = int(year) if year != 0 else 2024  # Año por defecto si es 0
+            month = int(month) if month != 0 else 1
+            day = int(day) if day != 0 else 1
+            hour = int(hour)
+            minute = int(minute)
+            
+            # Crear datetime
+            fecha_dt = dt(year, month, day, hour, minute, 0)
+            log.debug(f"Fecha reconstruida para {base_event}: {fecha_dt}")
+            return fecha_dt
+        else:
+            log.warning(f"Faltan componentes DTL para {base_event}: Y={year}, M={month}, D={day}, H={hour}, M={minute}")
+            return None
+            
+    except Exception as e:
+        log.error(f"Error construyendo fecha para {base_event}: {e}")
+        return None
+
 def procesar_valor_opc_ua(valor: Any) -> Any:
     """
     Procesa valores complejos de OPC UA para convertirlos a tipos simples
@@ -509,9 +549,27 @@ def procesar_intervalo_programado(valores: Dict[str, Any], tabla_config: Dict[st
             log.info(f"Evento {tag}: {valor} (tipo: {type(valor)})")
             
             if valor is not None:
-                # Extraer nombre base del evento
+                # Extraer nombre base del evento y tipo de campo
                 partes_tag = tag.split(".")
-                if len(partes_tag) >= 4 and partes_tag[-1] in ["Categoria", "ID", "CantidadEventos", "FechaYHora", "Turno", "TiempoSegundosAcumulado"]:
+                
+                # Detectar componentes DTL de fecha
+                if len(partes_tag) >= 6 and partes_tag[-1] in ["YEAR", "MONTH", "DAY", "HOUR", "MINUTE"]:
+                    # Es un componente DTL de fecha
+                    evento_base = ".".join(partes_tag[:-2])  # Ej: OPC_DATOS.REGISTRO_EVENTOS.FALLAS.02_E4_FALLA_SENSOR_SEGURIDAD_REMACHADO.FechaYHora
+                    componente = partes_tag[-1]  # YEAR, MONTH, etc.
+                    
+                    # Extraer el nombre real del evento (sin FechaYHora)
+                    evento_real = ".".join(partes_tag[:-3])  # Quita .FechaYHora.COMPONENTE
+                    
+                    if evento_real not in eventos_base:
+                        eventos_base[evento_real] = {}
+                        eventos_base[evento_real]["_dtl_componentes"] = {}
+                    
+                    # Guardar componente DTL
+                    eventos_base[evento_real]["_dtl_componentes"][componente] = valor
+                
+                elif len(partes_tag) >= 4 and partes_tag[-1] in ["Categoria", "ID", "CantidadEventos", "Turno", "TiempoSegundosAcumulado"]:
+                    # Es un campo normal del evento
                     evento_base = ".".join(partes_tag[:-1])  # Ej: OPC_DATOS.REGISTRO_EVENTOS.FALLAS.06_E15_POLO_ATASCADO
                     campo = partes_tag[-1].lower()
                     
@@ -525,8 +583,6 @@ def procesar_intervalo_programado(valores: Dict[str, Any], tabla_config: Dict[st
                         eventos_base[evento_base]["id_evento"] = valor
                     elif campo == "cantidadeventos":
                         eventos_base[evento_base]["cantidad_eventos"] = valor
-                    elif campo == "fechayhora":
-                        eventos_base[evento_base]["fecha_y_hora"] = valor
                     elif campo == "turno":
                         eventos_base[evento_base]["turno"] = valor
                     elif campo == "tiemposegundosacumulado":
@@ -541,7 +597,26 @@ def procesar_intervalo_programado(valores: Dict[str, Any], tabla_config: Dict[st
                     "of": valores.get("OPC_DATOS.GENERAL.OF"),
                     "turno": valores.get("OPC_DATOS.GENERAL.TURNO_ACTUAL")
                 }
-                datos_completos.update(datos_evento)
+                
+                # Agregar datos del evento
+                for key, valor in datos_evento.items():
+                    if key != "_dtl_componentes":
+                        datos_completos[key] = valor
+                
+                # Reconstruir fecha desde componentes DTL si existen
+                if "_dtl_componentes" in datos_evento:
+                    # Extraer nombre del evento base para reconstruir fecha
+                    evento_nombre = evento_base.split("OPC_DATOS.REGISTRO_EVENTOS.FALLAS.")[-1]
+                    fecha_reconstruida = construir_fecha_desde_dtl(valores, evento_nombre)
+                    
+                    if fecha_reconstruida:
+                        datos_completos["fecha_y_hora"] = fecha_reconstruida
+                        log.info(f"Fecha reconstruida para {evento_nombre}: {fecha_reconstruida}")
+                    else:
+                        # Fallback a fecha actual si no se puede reconstruir
+                        datos_completos["fecha_y_hora"] = ahora
+                        log.warning(f"Usando fecha actual para {evento_nombre} - no se pudieron reconstruir componentes DTL")
+                
                 eventos_registrados.append(datos_completos)
         
         log.info(f"Procesados {len(eventos_registrados)} eventos")
