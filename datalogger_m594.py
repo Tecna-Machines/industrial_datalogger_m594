@@ -592,6 +592,9 @@ def procesar_intervalo_programado(valores: Dict[str, Any], tabla_config: Dict[st
         # Crear un registro por cada evento que tenga datos
         for evento_base, datos_evento in eventos_base.items():
             if datos_evento:  # Solo si tiene datos
+                log.info(f"Procesando evento: {evento_base}")
+                log.info(f"  Datos del evento: {datos_evento}")
+                
                 datos_completos = {
                     "fecha_hora": ahora,
                     "fecha_hora_registro": ahora,
@@ -606,6 +609,7 @@ def procesar_intervalo_programado(valores: Dict[str, Any], tabla_config: Dict[st
                 
                 # Reconstruir fecha desde componentes DTL si existen
                 if "_dtl_componentes" in datos_evento:
+                    log.info(f"  Componentes DTL encontrados: {datos_evento['_dtl_componentes']}")
                     # Usar el evento_base completo para construir los tags
                     fecha_reconstruida = construir_fecha_desde_dtl(valores, evento_base)
                     
@@ -616,6 +620,27 @@ def procesar_intervalo_programado(valores: Dict[str, Any], tabla_config: Dict[st
                         # No se pudo reconstruir fecha, dejar como None
                         datos_completos["fecha_y_hora"] = None
                         log.warning(f"No se pudieron reconstruir componentes DTL para {evento_base}")
+                else:
+                    log.warning(f"  No se encontraron componentes DTL para {evento_base}")
+                    # Intentar buscar componentes DTL directamente en valores
+                    dtl_components = {}
+                    for comp in ["YEAR", "MONTH", "DAY", "HOUR", "MINUTE"]:
+                        tag = f"{evento_base}.FechaYHora.{comp}"
+                        if tag in valores:
+                            dtl_components[comp] = valores[tag]
+                    
+                    if dtl_components:
+                        log.info(f"  Componentes DTL encontrados directamente: {dtl_components}")
+                        # Reconstruir fecha con estos componentes
+                        valores_temp = valores.copy()
+                        for comp, val in dtl_components.items():
+                            tag = f"{evento_base}.FechaYHora.{comp}"
+                            valores_temp[tag] = val
+                        
+                        fecha_reconstruida = construir_fecha_desde_dtl(valores_temp, evento_base)
+                        if fecha_reconstruida:
+                            datos_completos["fecha_y_hora"] = fecha_reconstruida
+                            log.info(f"Fecha reconstruida (directa) para {evento_base}: {fecha_reconstruida}")
                 
                 eventos_registrados.append(datos_completos)
         
