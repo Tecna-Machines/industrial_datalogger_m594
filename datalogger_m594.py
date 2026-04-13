@@ -755,7 +755,7 @@ async def run_tablas_service():
     for tabla_nombre, tabla_config in config["tablas"].items():
         ensure_tabla(tabla_nombre, tabla_config["table_schema"])
     
-    # Inicializar state tracker
+    # Estado para control de tiempo
     state_tracker = TablaStateTracker()
     
     # Estadísticas
@@ -763,51 +763,72 @@ async def run_tablas_service():
     registros_totales = 0
     ultimo_log_stats = time.time()
     
-    log.info("🔄 Iniciando ciclo de procesamiento de tablas...")
+    # Seguimiento individual de tiempos por tabla
+    ultimo_proceso = {tabla: 0 for tabla in config["tablas"].keys()}
+    
+    log.info("Iniciando ciclo de procesamiento de tablas...")
     
     while not _stop:
         ciclo_inicio = time.time()
+        tiempo_actual = time.time()
         
         for tabla_nombre, tabla_config in config["tablas"].items():
             try:
-                # Leer solo los tags necesarios para esta tabla
-                valores = await leer_tags_tabla(tabla_config["tags"], tags_mapping)
+                # Verificar si es momento de procesar esta tabla
+                poll_seconds = tabla_config.get("poll_seconds", 60)
                 
-                # Procesar según la condición
-                condicion = tabla_config.get("condicion", "siempre")
-                
+                # Para trazabilidad, siempre procesar (tiene su propia lógica interna)
                 if tabla_nombre == "trazabilidad":
-                    datos = procesar_trazabilidad(valores, state_tracker)
-                elif condicion == "intervalo_programado":
-                    datos = procesar_intervalo_programado(valores, tabla_config, state_tracker, tabla_nombre)
+                    debe_procesar = True
                 else:
-                    datos = None
+                    # Para otras tablas, respetar poll_seconds
+                    tiempo_desde_ultimo = tiempo_actual - ultimo_proceso[tabla_nombre]
+                    debe_procesar = tiempo_desde_ultimo >= poll_seconds
                 
-                # Insertar si hay datos
-                if datos:
-                    if tabla_nombre == "eventos" and isinstance(datos, list):
-                        # Eventos puede insertar múltiples registros
-                        for evento_datos in datos:
-                            if insertar_datos_tabla(tabla_nombre, evento_datos, tabla_config["table_schema"]):
-                                registros_totales += 1
+                if debe_procesar:
+                    log.debug(f"Procesando tabla {tabla_nombre} (poll: {poll_seconds}s)")
+                    
+                    # Leer solo los tags necesarios para esta tabla
+                    valores = await leer_tags_tabla(tabla_config["tags"], tags_mapping)
+                    
+                    # Procesar según la condición
+                    condicion = tabla_config.get("condicion", "siempre")
+                    
+                    if tabla_nombre == "trazabilidad":
+                        datos = procesar_trazabilidad(valores, state_tracker)
+                    elif condicion == "intervalo_programado":
+                        datos = procesar_intervalo_programado(valores, tabla_config, state_tracker, tabla_nombre)
                     else:
-                        if insertar_datos_tabla(tabla_nombre, datos, tabla_config["table_schema"]):
-                            registros_totales += 1
+                        datos = None
+                    
+                    # Insertar si hay datos
+                    if datos:
+                        if tabla_nombre == "eventos" and isinstance(datos, list):
+                            # Eventos puede insertar múltiples registros
+                            for evento_datos in datos:
+                                if insertar_datos_tabla(tabla_nombre, evento_datos, tabla_config["table_schema"]):
+                                    registros_totales += 1
+                        else:
+                            if insertar_datos_tabla(tabla_nombre, datos, tabla_config["table_schema"]):
+                                registros_totales += 1
+                    
+                    # Actualizar timestamp de último procesamiento
+                    ultimo_proceso[tabla_nombre] = tiempo_actual
                 
             except Exception as e:
-                log.error(f"❌ Error procesando tabla {tabla_nombre}: {e}")
+                log.error(f"Error procesando tabla {tabla_nombre}: {e}")
                 log.exception("Detalles del error:")
         
         ciclos_totales += 1
         
         # Estadísticas cada 60 segundos
         if time.time() - ultimo_log_stats >= 60:
-            log.info(f"📈 Estadísticas: {ciclos_totales} ciclos, {registros_totales} registros totales")
+            log.info(f"Estadísticas: {ciclos_totales} ciclos, {registros_totales} registros totales")
             ultimo_log_stats = time.time()
         
-        # Esperar para próximo ciclo (mínimo entre todas las tablas)
+        # Esperar para próximo ciclo (siempre 1 segundo para trazabilidad)
         ciclo_tiempo = time.time() - ciclo_inicio
-        espera = max(1, 2 - ciclo_tiempo)  # Mínimo 2 segundos para trazabilidad
+        espera = max(1, 1 - ciclo_tiempo)  # Mínimo 1 segundo
         if espera > 0:
             await asyncio.sleep(espera)
     
