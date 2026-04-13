@@ -591,7 +591,8 @@ def procesar_intervalo_programado(valores: Dict[str, Any], tabla_config: Dict[st
         
         # Crear un registro por cada evento que tenga datos
         for evento_base, datos_evento in eventos_base.items():
-            if datos_evento:  # Solo si tiene datos
+            # Solo procesar eventos que tengan datos reales (no solo componentes DTL)
+            if datos_evento and len([k for k in datos_evento.keys() if k != "_dtl_componentes"]) > 0:
                 log.info(f"Procesando evento: {evento_base}")
                 log.info(f"  Datos del evento: {datos_evento}")
                 
