@@ -476,18 +476,24 @@ def procesar_trazabilidad(valores: Dict[str, Any], state_tracker: TablaStateTrac
     ciclo_actual = valores.get("OPC_DATOS.TRAZABILIDAD.CICLO_ACTUAL")
     of_actual = valores.get("OPC_DATOS.GENERAL.OF")
     
+    log.info(f"🔄 Trazabilidad - Ciclo: {ciclo_actual}, OF: {of_actual}")
+    
     if ciclo_actual is None or of_actual is None:
+        log.warning(f"❌ Trazabilidad - Datos incompletos: ciclo={ciclo_actual}, of={of_actual}")
         return False
     
     # Obtener último estado
     ultimo_ciclo = state_tracker.get_estado("trazabilidad", "ciclo_actual")
     ultima_of = state_tracker.get_estado("trazabilidad", "of")
     
+    log.info(f"📊 Trazabilidad - Último ciclo: {ultimo_ciclo}, Última OF: {ultima_of}")
+    
     debe_registrar = False
     
     if ultimo_ciclo is None or ultima_of is None:
         # Primera vez
         debe_registrar = True
+        log.info(f"✅ Trazabilidad - Primera vez, se registrará")
     else:
         # Condición: misma OF y ciclo mayor
         if (ultima_of == of_actual and 
@@ -495,6 +501,9 @@ def procesar_trazabilidad(valores: Dict[str, Any], state_tracker: TablaStateTrac
             isinstance(ultimo_ciclo, (int, float)) and
             ciclo_actual > ultimo_ciclo):
             debe_registrar = True
+            log.info(f"✅ Trazabilidad - Ciclo mayor ({ciclo_actual} > {ultimo_ciclo}), se registrará")
+        else:
+            log.info(f"⏭️ Trazabilidad - No se registra: misma OF={ultima_of == of_actual}, ciclo mayor={ciclo_actual > ultimo_ciclo if isinstance(ciclo_actual, (int, float)) and isinstance(ultimo_ciclo, (int, float)) else 'N/A'}")
     
     if debe_registrar:
         # Preparar datos para inserción
@@ -593,8 +602,7 @@ def procesar_intervalo_programado(valores: Dict[str, Any], tabla_config: Dict[st
         for evento_base, datos_evento in eventos_base.items():
             # Solo procesar eventos que tengan datos reales (no solo componentes DTL)
             if datos_evento and len([k for k in datos_evento.keys() if k != "_dtl_componentes"]) > 0:
-                log.info(f"Procesando evento: {evento_base}")
-                log.info(f"  Datos del evento: {datos_evento}")
+                log.debug(f"Procesando evento: {evento_base}")
                 
                 datos_completos = {
                     "fecha_hora": ahora,
@@ -610,19 +618,19 @@ def procesar_intervalo_programado(valores: Dict[str, Any], tabla_config: Dict[st
                 
                 # Reconstruir fecha desde componentes DTL si existen
                 if "_dtl_componentes" in datos_evento:
-                    log.info(f"  Componentes DTL encontrados: {datos_evento['_dtl_componentes']}")
+                    log.debug(f"  Componentes DTL encontrados: {datos_evento['_dtl_componentes']}")
                     # Usar el evento_base completo para construir los tags
                     fecha_reconstruida = construir_fecha_desde_dtl(valores, evento_base)
                     
                     if fecha_reconstruida:
                         datos_completos["fecha_y_hora"] = fecha_reconstruida
-                        log.info(f"Fecha reconstruida para {evento_base}: {fecha_reconstruida}")
+                        log.debug(f"Fecha reconstruida para {evento_base}: {fecha_reconstruida}")
                     else:
                         # No se pudo reconstruir fecha, dejar como None
                         datos_completos["fecha_y_hora"] = None
-                        log.warning(f"No se pudieron reconstruir componentes DTL para {evento_base}")
+                        log.debug(f"No se pudieron reconstruir componentes DTL para {evento_base}")
                 else:
-                    log.warning(f"  No se encontraron componentes DTL para {evento_base}")
+                    log.debug(f"  No se encontraron componentes DTL para {evento_base}")
                     # Intentar buscar componentes DTL directamente en valores
                     dtl_components = {}
                     for comp in ["YEAR", "MONTH", "DAY", "HOUR", "MINUTE"]:
@@ -631,7 +639,7 @@ def procesar_intervalo_programado(valores: Dict[str, Any], tabla_config: Dict[st
                             dtl_components[comp] = valores[tag]
                     
                     if dtl_components:
-                        log.info(f"  Componentes DTL encontrados directamente: {dtl_components}")
+                        log.debug(f"  Componentes DTL encontrados directamente: {dtl_components}")
                         # Reconstruir fecha con estos componentes
                         valores_temp = valores.copy()
                         for comp, val in dtl_components.items():
@@ -641,11 +649,11 @@ def procesar_intervalo_programado(valores: Dict[str, Any], tabla_config: Dict[st
                         fecha_reconstruida = construir_fecha_desde_dtl(valores_temp, evento_base)
                         if fecha_reconstruida:
                             datos_completos["fecha_y_hora"] = fecha_reconstruida
-                            log.info(f"Fecha reconstruida (directa) para {evento_base}: {fecha_reconstruida}")
+                            log.debug(f"Fecha reconstruida (directa) para {evento_base}: {fecha_reconstruida}")
                 
                 eventos_registrados.append(datos_completos)
         
-        log.info(f"Procesados {len(eventos_registrados)} eventos")
+        log.debug(f"Procesados {len(eventos_registrados)} eventos")
         
         # Actualizar timestamp del último registro
         state_tracker.set_ultimo_registro(tabla_nombre, ahora)
