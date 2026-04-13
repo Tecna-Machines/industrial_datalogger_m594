@@ -493,17 +493,26 @@ def procesar_trazabilidad(valores: Dict[str, Any], state_tracker: TablaStateTrac
     if ultimo_ciclo is None or ultima_of is None:
         # Primera vez
         debe_registrar = True
-        log.info(f"✅ Trazabilidad - Primera vez, se registrará")
+        log.info(f"  Trazabilidad - Primera vez, se registrará")
     else:
-        # Condición: misma OF y ciclo mayor
-        if (ultima_of == of_actual and 
-            isinstance(ciclo_actual, (int, float)) and 
-            isinstance(ultimo_ciclo, (int, float)) and
-            ciclo_actual > ultimo_ciclo):
+        # Verificar si cambió la OF
+        if ultima_of != of_actual:
+            # Resetear tracking para nueva OF
+            log.info(f"  Trazabilidad - OF cambió ({ultima_of} -> {of_actual}), reseteando tracking")
+            state_tracker.set_estado("trazabilidad", "ciclo_actual", None)
+            state_tracker.set_estado("trazabilidad", "of", None)
             debe_registrar = True
-            log.info(f"✅ Trazabilidad - Ciclo mayor ({ciclo_actual} > {ultimo_ciclo}), se registrará")
+            log.info(f"  Trazabilidad - Nueva OF, se registrará primer ciclo")
         else:
-            log.info(f"⏭️ Trazabilidad - No se registra: misma OF={ultima_of == of_actual}, ciclo mayor={ciclo_actual > ultimo_ciclo if isinstance(ciclo_actual, (int, float)) and isinstance(ultimo_ciclo, (int, float)) else 'N/A'}")
+            # Condición: misma OF y ciclo mayor
+            if (ultima_of == of_actual and 
+                isinstance(ciclo_actual, (int, float)) and 
+                isinstance(ultimo_ciclo, (int, float)) and
+                ciclo_actual > ultimo_ciclo):
+                debe_registrar = True
+                log.info(f"  Trazabilidad - Ciclo mayor ({ciclo_actual} > {ultimo_ciclo}), se registrará")
+            else:
+                log.info(f"  Trazabilidad - No se registra: misma OF={ultima_of == of_actual}, ciclo mayor={ciclo_actual > ultimo_ciclo if isinstance(ciclo_actual, (int, float)) and isinstance(ultimo_ciclo, (int, float)) else 'N/A'}")
     
     if debe_registrar:
         # Preparar datos para inserción
