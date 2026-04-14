@@ -184,7 +184,7 @@ def insertar_trazabilidad(datos: Dict[str, Any]) -> bool:
         cursor = conn.cursor()
         
         sql = """
-        INSERT INTO trazabilidad (ciclo_actual, of, codigo_producto_terminado, 
+        INSERT INTO trazabilidad (ciclo_actual, `of`, codigo_producto_terminado, 
                                 codigo_polo_1, codigo_polo_2, codigo_polo_3, codigo_polo_4,
                                 codigo_inspecciones, turno, fecha_hora)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
