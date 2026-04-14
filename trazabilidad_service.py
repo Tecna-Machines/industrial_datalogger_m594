@@ -14,6 +14,14 @@ from datetime import datetime as dt
 from typing import Dict, Any, Optional
 from asyncua import Client
 
+# Configuración de logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+log = logging.getLogger(__name__)
+
 # Cargar variables de entorno desde .env si existe
 try:
     from dotenv import load_dotenv
@@ -36,14 +44,6 @@ except ImportError:
             log.error(f"❌ Error leyendo .env manualmente: {e}")
     else:
         log.warning(f"⚠️  Archivo .env no encontrado en: {os.path.abspath('.')}")
-
-# Configuración de logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s | %(levelname)s | %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-log = logging.getLogger(__name__)
 
 # Variables de entorno
 OPC_ENDPOINT = os.getenv("OPC_ENDPOINT", "opc.tcp://192.168.20.30:4840")
