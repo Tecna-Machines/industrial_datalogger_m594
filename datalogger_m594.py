@@ -310,7 +310,7 @@ async def procesar_tabla_individual(tabla_nombre: str, tabla_config: Dict[str, A
             condicion = tabla_config.get("condicion", "siempre")
             
             if tabla_nombre == "trazabilidad":
-                datos = procesar_trazabilidad(valores, state_tracker)
+                datos = procesar_trazabilidad(valores, state_tracker, tabla_config["table_schema"])
             elif condicion == "intervalo_programado":
                 datos = procesar_intervalo_programado(valores, tabla_config, state_tracker, tabla_nombre)
             else:
@@ -555,7 +555,7 @@ def procesar_valor_opc_ua(valor: Any) -> Any:
     # Para todos los demás casos, retornar el valor original
     return valor
 
-def procesar_trazabilidad(valores: Dict[str, Any], state_tracker: TablaStateTracker) -> bool:
+def procesar_trazabilidad(valores: Dict[str, Any], state_tracker: TablaStateTracker, schema: Dict[str, Any] = None) -> bool:
     """Procesa trazabilidad con condición especial"""
     ciclo_actual = valores.get("OPC_DATOS.TRAZABILIDAD.CICLO_ACTUAL")
     of_actual = valores.get("OPC_DATOS.GENERAL.OF")
@@ -623,10 +623,10 @@ def procesar_trazabilidad(valores: Dict[str, Any], state_tracker: TablaStateTrac
                 "fecha_hora": dt.now()
             }
             
-            if insertar_datos_tabla("trazabilidad", datos, None):
-                log.info(f" Trazabilidad - Registrado ciclo perdido {ciclo} para OF {of_actual}")
+            if insertar_datos_tabla("trazabilidad", datos, schema):
+                log.info(f"  Trazabilidad - Registrado ciclo perdido {ciclo} para OF {of_actual}")
             else:
-                log.error(f" Trazabilidad - Error insertando ciclo perdido {ciclo}")
+                log.error(f"  Trazabilidad - Error insertando ciclo perdido {ciclo}")
         
         # Registrar el ciclo actual
         datos = {
@@ -643,18 +643,18 @@ def procesar_trazabilidad(valores: Dict[str, Any], state_tracker: TablaStateTrac
         }
         
         # Insertar en base de datos
-        if insertar_datos_tabla("trazabilidad", datos, None):
+        if insertar_datos_tabla("trazabilidad", datos, schema):
             # Actualizar estado
             state_tracker.set_estado("trazabilidad", "ciclo_actual", ciclo_actual)
             state_tracker.set_estado("trazabilidad", "of", of_actual)
             
             if ciclos_perdidos:
-                log.info(f" Trazabilidad - Registrado ciclo actual {ciclo_actual} + {len(ciclos_perdidos)} ciclos perdidos para OF {of_actual}")
+                log.info(f"  Trazabilidad - Registrado ciclo actual {ciclo_actual} + {len(ciclos_perdidos)} ciclos perdidos para OF {of_actual}")
             else:
-                log.info(f" Trazabilidad - Registrado ciclo {ciclo_actual} para OF {of_actual}")
+                log.info(f"  Trazabilidad - Registrado ciclo {ciclo_actual} para OF {of_actual}")
             return True
         else:
-            log.error(f" Trazabilidad - Error insertando ciclo {ciclo_actual}")
+            log.error(f"  Trazabilidad - Error insertando ciclo {ciclo_actual}")
             return False
 
 def procesar_intervalo_programado(valores: Dict[str, Any], tabla_config: Dict[str, Any], 
