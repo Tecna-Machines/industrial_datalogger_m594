@@ -259,10 +259,10 @@ def procesar_valor_opc_ua(valor: Any) -> Any:
                 
                 # Último recurso: string del objeto
                 return f"ExtensionObject:{str(valor)[:50]}"
-            except:
+            else:
                 return f"ExtensionObject:{str(valor)[:50]}"
-        else:
-            return str(valor)[:50]  # Limitar longitud
+        except:
+            return f"ExtensionObject:{str(valor)[:50]}"
     else:
         return str(valor)
     
