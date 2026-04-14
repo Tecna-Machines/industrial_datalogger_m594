@@ -392,93 +392,167 @@ def reconstruir_fecha_dtl(dtl_componentes: Dict[str, Any]) -> Optional[dt]:
     
     return None
 
+def construir_fecha_desde_dtl(valores: Dict[str, Any], base_event: str) -> Optional[dt]:
+    """
+    Construye un objeto datetime desde componentes DTL individuales
+    """
+    try:
+        # Buscar componentes DTL para este evento
+        # El base_event ya incluye el prefijo completo
+        year_tag = f"{base_event}.FechaYHora.YEAR"
+        month_tag = f"{base_event}.FechaYHora.MONTH"
+        day_tag = f"{base_event}.FechaYHora.DAY"
+        hour_tag = f"{base_event}.FechaYHora.HOUR"
+        minute_tag = f"{base_event}.FechaYHora.MINUTE"
+        
+        # Obtener valores
+        year = valores.get(year_tag)
+        month = valores.get(month_tag)
+        day = valores.get(day_tag)
+        hour = valores.get(hour_tag)
+        minute = valores.get(minute_tag)
+        
+        # Validar que tengamos los componentes necesarios
+        if all(v is not None for v in [year, month, day, hour, minute]):
+            # Convertir a enteros
+            year = int(year)
+            month = int(month)
+            day = int(day)
+            hour = int(hour)
+            minute = int(minute)
+            
+            # Crear datetime con cualquier fecha del PLC (incluyendo 1970-01-01)
+            fecha_dt = dt(year, month, day, hour, minute, 0)
+            log.debug(f"Fecha reconstruida para {base_event}: {fecha_dt}")
+            return fecha_dt
+        else:
+            log.warning(f"Faltan componentes DTL para {base_event}: Y={year}, M={month}, D={day}, H={hour}, M={minute}")
+            return None
+            
+    except Exception as e:
+        log.error(f"Error construyendo fecha para {base_event}: {e}")
+        return None
+
 def procesar_eventos(valores: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Procesa datos de eventos y devuelve lista de eventos para inserción"""
+    eventos_registrados = []
     eventos_base = {}
+    ahora = dt.now()
     
-    # Agrupar valores por evento
     for tag, valor in valores.items():
-        if valor is None:
-            continue
+        if valor is not None:
+            # Extraer nombre base del evento y tipo de campo
+            partes_tag = tag.split(".")
             
-        # Extraer nombre base del evento y tipo de campo
-        partes_tag = tag.split(".")
-        
-        # Detectar componentes DTL de fecha
-        if len(partes_tag) >= 6 and partes_tag[-1] in ["YEAR", "MONTH", "DAY", "HOUR", "MINUTE"]:
-            # Es un componente DTL de fecha
-            evento_base = ".".join(partes_tag[:-2])  # Ej: OPC_DATOS.REGISTRO_EVENTOS.FALLAS.02_E4_FALLA_SENSOR_SEGURIDAD_REMACHADO.FechaYHora
-            componente = partes_tag[-1]  # YEAR, MONTH, etc.
+            # Detectar componentes DTL de fecha
+            if len(partes_tag) >= 6 and partes_tag[-1] in ["YEAR", "MONTH", "DAY", "HOUR", "MINUTE"]:
+                # Es un componente DTL de fecha
+                evento_base = ".".join(partes_tag[:-2])  # Ej: OPC_DATOS.REGISTRO_EVENTOS.FALLAS.02_E4_FALLA_SENSOR_SEGURIDAD_REMACHADO.FechaYHora
+                componente = partes_tag[-1]  # YEAR, MONTH, etc.
+                
+                # Extraer el nombre real del evento (sin FechaYHora)
+                evento_real = ".".join(partes_tag[:-3])  # Quita .FechaYHora.COMPONENTE
+                
+                if evento_real not in eventos_base:
+                    eventos_base[evento_real] = {}
+                    eventos_base[evento_real]["_dtl_componentes"] = {}
+                
+                # Guardar componente DTL
+                eventos_base[evento_real]["_dtl_componentes"][componente] = valor
             
-            # Extraer el nombre real del evento (sin FechaYHora)
-            evento_real = ".".join(partes_tag[:-3])  # Quita .FechaYHora.COMPONENTE
-            
-            if evento_real not in eventos_base:
-                eventos_base[evento_real] = {}
-                eventos_base[evento_real]["_dtl_componentes"] = {}
-            
-            # Guardar componente DTL
-            eventos_base[evento_real]["_dtl_componentes"][componente] = valor
-        
-        elif len(partes_tag) >= 4 and partes_tag[-1] in ["Categoria", "ID", "CantidadEventos", "Turno", "TiempoSegundosAcumulado"]:
-            # Es un campo normal del evento
-            evento_base = ".".join(partes_tag[:-1])  # Ej: OPC_DATOS.REGISTRO_EVENTOS.FALLAS.06_E15_POLO_ATASCADO
-            campo = partes_tag[-1].lower()
-            
-            if evento_base not in eventos_base:
-                eventos_base[evento_base] = {}
-            
-            # Mapear campo a nombre de columna
-            if campo == "categoria":
-                eventos_base[evento_base]["categoria"] = valor
-            elif campo == "id":
-                eventos_base[evento_base]["id_evento"] = valor
-            elif campo == "cantidadeventos":
-                eventos_base[evento_base]["cantidad_eventos"] = valor
-            elif campo == "turno":
-                eventos_base[evento_base]["turno"] = valor
-            elif campo == "tiemposegundosacumulado":
-                eventos_base[evento_base]["tiempo_segundos_acumulado"] = valor
+            elif len(partes_tag) >= 4 and partes_tag[-1] in ["Categoria", "ID", "CantidadEventos", "Turno", "TiempoSegundosAcumulado"]:
+                # Es un campo normal del evento
+                evento_base = ".".join(partes_tag[:-1])  # Ej: OPC_DATOS.REGISTRO_EVENTOS.FALLAS.06_E15_POLO_ATASCADO
+                campo = partes_tag[-1].lower()
+                
+                if evento_base not in eventos_base:
+                    eventos_base[evento_base] = {}
+                
+                # Mapear campo a nombre de columna
+                if campo == "categoria":
+                    eventos_base[evento_base]["categoria"] = valor
+                elif campo == "id":
+                    eventos_base[evento_base]["id_evento"] = valor
+                elif campo == "cantidadeventos":
+                    eventos_base[evento_base]["cantidad_eventos"] = valor
+                elif campo == "turno":
+                    eventos_base[evento_base]["turno"] = valor
+                elif campo == "tiemposegundosacumulado":
+                    eventos_base[evento_base]["tiempo_segundos_acumulado"] = valor
     
     # Crear un registro por cada evento que tenga datos
-    eventos_procesados = []
     for evento_base, datos_evento in eventos_base.items():
         # Solo procesar eventos que tengan datos reales (no solo componentes DTL)
         if datos_evento and len([k for k in datos_evento.keys() if k != "_dtl_componentes"]) > 0:
             log.debug(f"Procesando evento: {evento_base}")
             
-            # Reconstruir fecha desde componentes DTL si existen
-            fecha_hora = None
-            if "_dtl_componentes" in datos_evento:
-                fecha_hora = reconstruir_fecha_dtl(datos_evento["_dtl_componentes"])
-            
-            # Si no hay fecha DTL, usar fecha actual
-            if fecha_hora is None:
-                fecha_hora = dt.now()
-            
-            # Extraer nombre del evento (última parte del tag)
-            nombre_evento = evento_base.split(".")[-1]
-            
-            # Crear registro de evento
-            evento_registro = {
-                "id_evento": datos_evento.get("id_evento"),
-                "categoria": datos_evento.get("categoria"),
-                "nombre_evento": nombre_evento,
-                "cantidad_eventos": datos_evento.get("cantidad_eventos"),
-                "tiempo_segundos_acumulado": datos_evento.get("tiempo_segundos_acumulado"),
-                "turno": datos_evento.get("turno"),
-                "fecha_hora": fecha_hora
+            datos_completos = {
+                "fecha_hora": ahora,
+                "fecha_hora_registro": ahora,
+                "of": valores.get("OPC_DATOS.GENERAL.OF"),
+                "turno": valores.get("OPC_DATOS.GENERAL.TURNO_ACTUAL")
             }
             
-            # Validar que tenga datos mínimos
-            if evento_registro["id_evento"] is not None and evento_registro["categoria"] is not None:
-                eventos_procesados.append(evento_registro)
-                log.debug(f"Evento válido: {nombre_evento} (ID: {evento_registro['id_evento']})")
+            # Agregar datos del evento
+            for key, valor in datos_evento.items():
+                if key != "_dtl_componentes":
+                    datos_completos[key] = valor
+            
+            # Reconstruir fecha desde componentes DTL si existen
+            if "_dtl_componentes" in datos_evento:
+                log.debug(f"  Componentes DTL encontrados: {datos_evento['_dtl_componentes']}")
+                # Usar el evento_base completo para construir los tags
+                fecha_reconstruida = construir_fecha_desde_dtl(valores, evento_base)
+                
+                if fecha_reconstruida:
+                    datos_completos["fecha_y_hora"] = fecha_reconstruida
+                    log.debug(f"Fecha reconstruida para {evento_base}: {fecha_reconstruida}")
+                else:
+                    # No se pudo reconstruir fecha, dejar como None
+                    datos_completos["fecha_y_hora"] = None
+                    log.debug(f"No se pudieron reconstruir componentes DTL para {evento_base}")
             else:
-                log.debug(f"Evento inválido (faltan datos): {nombre_evento}")
+                log.debug(f"  No se encontraron componentes DTL para {evento_base}")
+                # Intentar buscar componentes DTL directamente en valores
+                dtl_components = {}
+                for comp in ["YEAR", "MONTH", "DAY", "HOUR", "MINUTE"]:
+                    tag = f"{evento_base}.FechaYHora.{comp}"
+                    if tag in valores:
+                        dtl_components[comp] = valores[tag]
+                    
+                if dtl_components:
+                    log.debug(f"  Componentes DTL encontrados directamente: {dtl_components}")
+                    # Reconstruir fecha con estos componentes
+                    valores_temp = valores.copy()
+                    for comp, val in dtl_components.items():
+                        tag = f"{evento_base}.FechaYHora.{comp}"
+                        valores_temp[tag] = val
+                    
+                    fecha_reconstruida = construir_fecha_desde_dtl(valores_temp, evento_base)
+                    if fecha_reconstruida:
+                        datos_completos["fecha_y_hora"] = fecha_reconstruida
+                        log.debug(f"Fecha reconstruida (directa) para {evento_base}: {fecha_reconstruida}")
+            
+            eventos_registrados.append(datos_completos)
     
-    log.info(f"Eventos - Procesados {len(eventos_procesados)} eventos válidos")
-    return eventos_procesados
+    log.debug(f"Procesados {len(eventos_registrados)} eventos")
+    
+    # Convertir al formato esperado por la función insertar_eventos
+    eventos_formateados = []
+    for evento in eventos_registrados:
+        evento_formateado = {
+            "id_evento": evento.get("id_evento"),
+            "categoria": evento.get("categoria"),
+            "nombre_evento": evento_base.split(".")[-1] if "evento_base" in locals() else "desconocido",
+            "cantidad_eventos": evento.get("cantidad_eventos"),
+            "tiempo_segundos_acumulado": evento.get("tiempo_segundos_acumulado"),
+            "turno": evento.get("turno"),
+            "fecha_hora": evento.get("fecha_y_hora", evento.get("fecha_hora_registro", dt.now()))
+        }
+        eventos_formateados.append(evento_formateado)
+    
+    log.info(f"Eventos - Procesados {len(eventos_formateados)} eventos válidos")
+    return eventos_formateados
 
 async def run_eventos_service():
     """Servicio principal de eventos"""
