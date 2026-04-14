@@ -323,6 +323,9 @@ async def procesar_tabla_individual(tabla_nombre: str, tabla_config: Dict[str, A
                     for evento_datos in datos:
                         if insertar_datos_tabla(tabla_nombre, evento_datos, tabla_config["table_schema"]):
                             registros_insertados += 1
+                elif tabla_nombre == "trazabilidad" and isinstance(datos, int):
+                    # Trazabilidad devuelve el total de registros insertados
+                    registros_insertados += datos
                 else:
                     if insertar_datos_tabla(tabla_nombre, datos, tabla_config["table_schema"]):
                         registros_insertados += 1
