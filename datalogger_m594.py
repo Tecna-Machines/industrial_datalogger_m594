@@ -277,30 +277,109 @@ class TablaStateTracker:
 # Procesamiento por tabla
 # -------------------------
 
+async def procesar_tabla_individual(tabla_nombre: str, tabla_config: Dict[str, Any], 
+                                 state_tracker: TablaStateTracker, tags_mapping: Dict[str, str]) -> int:
+    """Procesa una tabla individualmente"""
+    registros_insertados = 0
+    
+    try:
+        # Verificar si es momento de procesar esta tabla
+        poll_seconds = tabla_config.get("poll_seconds", 60)
+        tiempo_actual = time.time()
+        
+        # Para trazabilidad, siempre procesar (tiene su propia lógica interna)
+        if tabla_nombre == "trazabilidad":
+            debe_procesar = True
+        else:
+            # Para otras tablas, respetar poll_seconds
+            tiempo_desde_ultimo = tiempo_actual - state_tracker.get_ultimo_registro(tabla_nombre)
+            debe_procesar = tiempo_desde_ultimo >= poll_seconds
+        
+        if debe_procesar:
+            log.debug(f"Procesando tabla {tabla_nombre} (poll: {poll_seconds}s)")
+            
+            # Leer solo los tags necesarios para esta tabla
+            valores = await leer_tags_tabla(tabla_config["tags"], tags_mapping)
+            
+            # Procesar según la condición
+            condicion = tabla_config.get("condicion", "siempre")
+            
+            if tabla_nombre == "trazabilidad":
+                datos = procesar_trazabilidad(valores, state_tracker)
+            elif condicion == "intervalo_programado":
+                datos = procesar_intervalo_programado(valores, tabla_config, state_tracker, tabla_nombre)
+            else:
+                datos = None
+            
+            # Insertar si hay datos
+            if datos:
+                if tabla_nombre == "eventos" and isinstance(datos, list):
+                    # Eventos puede insertar múltiples registros
+                    for evento_datos in datos:
+                        if insertar_datos_tabla(tabla_nombre, evento_datos, tabla_config["table_schema"]):
+                            registros_insertados += 1
+                else:
+                    if insertar_datos_tabla(tabla_nombre, datos, tabla_config["table_schema"]):
+                        registros_insertados += 1
+            
+            # Actualizar timestamp de último procesamiento
+            state_tracker.set_ultimo_registro(tabla_nombre, tiempo_actual)
+        
+    except Exception as e:
+        log.error(f"Error procesando tabla {tabla_nombre}: {e}")
+        log.exception("Detalles del error:")
+    
+    return registros_insertados
+
+# Variable global para el cliente OPC UA persistente
+_opc_client = None
+_opc_client_lock = asyncio.Lock()
+
+async def get_opc_client():
+    """Obtiene o crea una conexión OPC UA persistente"""
+    global _opc_client
+    async with _opc_client_lock:
+        if _opc_client is None:
+            log.info("Conectando al servidor OPC UA...")
+            _opc_client = Client(url=OPC_ENDPOINT)
+            await _opc_client.connect()
+            log.info("Conexión OPC UA establecida")
+        return _opc_client
+
+async def close_opc_client():
+    """Cierra la conexión OPC UA persistente"""
+    global _opc_client
+    async with _opc_client_lock:
+        if _opc_client is not None:
+            await _opc_client.disconnect()
+            _opc_client = None
+            log.info("Conexión OPC UA cerrada")
+
 async def leer_tags_tabla(tags: List[str], mapeo: Dict[str, str]) -> Dict[str, Any]:
-    """Lee solo los tags necesarios para una tabla específica"""
+    """Lee solo los tags necesarios para una tabla específica usando conexión persistente"""
     valores = {}
-    async with Client(url=OPC_ENDPOINT) as client:
-        for tag_key in tags:
-            try:
-                nodeid = mapeo.get(tag_key)
-                if not nodeid:
-                    log.warning(f"⚠️  No se encontró NodeId para tag {tag_key}")
-                    valores[tag_key] = None
-                    continue
-                
-                node = client.get_node(nodeid)
-                valor = await node.read_value()
-                
-                # Manejar tipos complejos de OPC UA
-                valor_procesado = procesar_valor_opc_ua(valor)
-                valores[tag_key] = valor_procesado
-                
-                log.debug(f"✅ Leído {tag_key}: {valor_procesado}")
-                
-            except Exception as e:
-                log.warning(f"❌ No se pudo leer tag {tag_key}: {e}")
+    client = await get_opc_client()
+    
+    for tag_key in tags:
+        try:
+            nodeid = mapeo.get(tag_key)
+            if not nodeid:
+                log.warning(f"  No se encontró NodeId para tag {tag_key}")
                 valores[tag_key] = None
+                continue
+            
+            node = client.get_node(nodeid)
+            valor = await node.read_value()
+            
+            # Manejar tipos complejos de OPC UA
+            valor_procesado = procesar_valor_opc_ua(valor)
+            valores[tag_key] = valor_procesado
+            
+            log.debug(f"  Leído {tag_key}: {valor_procesado}")
+            
+        except Exception as e:
+            log.warning(f"  No se pudo leer tag {tag_key}: {e}")
+            valores[tag_key] = None
     
     return valores
 
@@ -772,76 +851,49 @@ async def run_tablas_service():
     registros_totales = 0
     ultimo_log_stats = time.time()
     
-    # Seguimiento individual de tiempos por tabla
-    ultimo_proceso = {tabla: 0 for tabla in config["tablas"].keys()}
+    log.info("Iniciando ciclo de procesamiento paralelo de tablas...")
     
-    log.info("Iniciando ciclo de procesamiento de tablas...")
-    
-    while not _stop:
-        ciclo_inicio = time.time()
-        tiempo_actual = time.time()
-        
-        for tabla_nombre, tabla_config in config["tablas"].items():
-            try:
-                # Verificar si es momento de procesar esta tabla
-                poll_seconds = tabla_config.get("poll_seconds", 60)
-                
-                # Para trazabilidad, siempre procesar (tiene su propia lógica interna)
-                if tabla_nombre == "trazabilidad":
-                    debe_procesar = True
+    try:
+        while not _stop:
+            ciclo_inicio = time.time()
+            
+            # Crear tareas para procesamiento paralelo
+            tareas = []
+            for tabla_nombre, tabla_config in config["tablas"].items():
+                tarea = asyncio.create_task(
+                    procesar_tabla_individual(tabla_nombre, tabla_config, state_tracker, tags_mapping)
+                )
+                tareas.append(tarea)
+            
+            # Esperar a que todas las tareas terminen
+            resultados = await asyncio.gather(*tareas, return_exceptions=True)
+            
+            # Procesar resultados y actualizar estadísticas
+            for i, resultado in enumerate(resultados):
+                if isinstance(resultado, Exception):
+                    tabla_nombre = list(config["tablas"].keys())[i]
+                    log.error(f"Error en tarea paralela para tabla {tabla_nombre}: {resultado}")
                 else:
-                    # Para otras tablas, respetar poll_seconds
-                    tiempo_desde_ultimo = tiempo_actual - ultimo_proceso[tabla_nombre]
-                    debe_procesar = tiempo_desde_ultimo >= poll_seconds
-                
-                if debe_procesar:
-                    log.debug(f"Procesando tabla {tabla_nombre} (poll: {poll_seconds}s)")
-                    
-                    # Leer solo los tags necesarios para esta tabla
-                    valores = await leer_tags_tabla(tabla_config["tags"], tags_mapping)
-                    
-                    # Procesar según la condición
-                    condicion = tabla_config.get("condicion", "siempre")
-                    
-                    if tabla_nombre == "trazabilidad":
-                        datos = procesar_trazabilidad(valores, state_tracker)
-                    elif condicion == "intervalo_programado":
-                        datos = procesar_intervalo_programado(valores, tabla_config, state_tracker, tabla_nombre)
-                    else:
-                        datos = None
-                    
-                    # Insertar si hay datos
-                    if datos:
-                        if tabla_nombre == "eventos" and isinstance(datos, list):
-                            # Eventos puede insertar múltiples registros
-                            for evento_datos in datos:
-                                if insertar_datos_tabla(tabla_nombre, evento_datos, tabla_config["table_schema"]):
-                                    registros_totales += 1
-                        else:
-                            if insertar_datos_tabla(tabla_nombre, datos, tabla_config["table_schema"]):
-                                registros_totales += 1
-                    
-                    # Actualizar timestamp de último procesamiento
-                    ultimo_proceso[tabla_nombre] = tiempo_actual
-                
-            except Exception as e:
-                log.error(f"Error procesando tabla {tabla_nombre}: {e}")
-                log.exception("Detalles del error:")
-        
-        ciclos_totales += 1
-        
-        # Estadísticas cada 60 segundos
-        if time.time() - ultimo_log_stats >= 60:
-            log.info(f"Estadísticas: {ciclos_totales} ciclos, {registros_totales} registros totales")
-            ultimo_log_stats = time.time()
-        
-        # Esperar para próximo ciclo (siempre 1 segundo para trazabilidad)
-        ciclo_tiempo = time.time() - ciclo_inicio
-        espera = max(1, 1 - ciclo_tiempo)  # Mínimo 1 segundo
-        if espera > 0:
-            await asyncio.sleep(espera)
+                    registros_totales += resultado
+            
+            ciclos_totales += 1
+            
+            # Estadísticas cada 60 segundos
+            if time.time() - ultimo_log_stats >= 60:
+                log.info(f"Estadísticas: {ciclos_totales} ciclos, {registros_totales} registros totales")
+                ultimo_log_stats = time.time()
+            
+            # Esperar para próximo ciclo (mínimo 0.5 segundos para mayor velocidad)
+            ciclo_tiempo = time.time() - ciclo_inicio
+            espera = max(0.5, 1.0 - ciclo_tiempo)
+            if espera > 0:
+                await asyncio.sleep(espera)
     
-    log.info("🛑 Servicio de tablas detenido")
+    finally:
+        # Asegurar que la conexión OPC UA se cierre
+        await close_opc_client()
+    
+    log.info("Servicio de tablas detenido")
 
 if __name__ == "__main__":
     install_signal_handlers()
