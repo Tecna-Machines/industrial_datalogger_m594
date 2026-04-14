@@ -14,6 +14,29 @@ from datetime import datetime as dt
 from typing import Dict, Any, Optional
 from asyncua import Client
 
+# Cargar variables de entorno desde .env si existe
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    log.info("✅ Archivo .env cargado con python-dotenv")
+except ImportError:
+    # Intentar leer .env manualmente si python-dotenv no está disponible
+    env_file = ".env"
+    if os.path.exists(env_file):
+        log.info(f"📁 Archivo .env encontrado en: {os.path.abspath(env_file)}")
+        try:
+            with open(env_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        key, value = line.split('=', 1)
+                        os.environ[key.strip()] = value.strip()
+            log.info("✅ Archivo .env cargado manualmente")
+        except Exception as e:
+            log.error(f"❌ Error leyendo .env manualmente: {e}")
+    else:
+        log.warning(f"⚠️  Archivo .env no encontrado en: {os.path.abspath('.')}")
+
 # Configuración de logging
 logging.basicConfig(
     level=logging.INFO,
@@ -29,6 +52,15 @@ MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
 MYSQL_USER = os.getenv("MYSQL_USER", "root")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
 MYSQL_DB = os.getenv("MYSQL_DB", "industrial_db")
+
+# Diagnóstico: mostrar variables cargadas
+log.info("🔍 Variables de entorno cargadas:")
+log.info(f"  OPC_ENDPOINT: {OPC_ENDPOINT}")
+log.info(f"  MYSQL_HOST: {MYSQL_HOST}")
+log.info(f"  MYSQL_PORT: {MYSQL_PORT}")
+log.info(f"  MYSQL_USER: {MYSQL_USER}")
+log.info(f"  MYSQL_PASSWORD: {'*' * len(MYSQL_PASSWORD) if MYSQL_PASSWORD else '(vacío)'}")
+log.info(f"  MYSQL_DB: {MYSQL_DB}")
 
 # Variable global para detener el servicio
 _stop = False
