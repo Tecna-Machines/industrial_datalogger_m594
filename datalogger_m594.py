@@ -292,8 +292,13 @@ async def procesar_tabla_individual(tabla_nombre: str, tabla_config: Dict[str, A
             debe_procesar = True
         else:
             # Para otras tablas, respetar poll_seconds
-            tiempo_desde_ultimo = tiempo_actual - state_tracker.get_ultimo_registro(tabla_nombre)
-            debe_procesar = tiempo_desde_ultimo >= poll_seconds
+            ultimo_registro = state_tracker.get_ultimo_registro(tabla_nombre)
+            if ultimo_registro is None:
+                # Primera vez que se procesa esta tabla
+                debe_procesar = True
+            else:
+                tiempo_desde_ultimo = tiempo_actual - ultimo_registro
+                debe_procesar = tiempo_desde_ultimo >= poll_seconds
         
         if debe_procesar:
             log.debug(f"Procesando tabla {tabla_nombre} (poll: {poll_seconds}s)")
