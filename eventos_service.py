@@ -216,6 +216,129 @@ def insertar_eventos(lista_eventos: List[Dict[str, Any]]) -> int:
         cursor.close()
         conn.close()
 
+def procesar_valor_opc_ua(valor: Any) -> Any:
+    """
+    Procesa valores complejos de OPC UA para convertirlos a tipos simples
+    """
+    # Si es None, retornar None
+    if valor is None:
+        return None
+    
+    # Mejorar detección de ExtensionObject
+    valor_str = str(type(valor))
+    
+    # Si es ExtensionObject (tipo complejo de Siemens)
+    if 'ExtensionObject' in valor_str:
+        try:
+            # Intentar extraer el valor del Body
+            if hasattr(valor, 'Body') and valor.Body is not None:
+                # Intentar diferentes formatos
+                try:
+                    # Intentar como string UTF-8
+                    decoded = valor.Body.decode('utf-8').strip('\x00')
+                    if decoded and any(c.isdigit() for c in decoded):
+                        return decoded
+                except UnicodeDecodeError:
+                    pass
+                    
+                # Intentar como estructura de fecha
+                if len(valor.Body) >= 8:
+                    # Formato común de fecha en bytes
+                    try:
+                        import struct
+                        # Intentar little-endian 32-bit
+                        year = struct.unpack('<H', valor.Body[0:2])[0]
+                        month = valor.Body[2]
+                        day = valor.Body[3]
+                        hour = valor.Body[4]
+                        minute = valor.Body[5]
+                        second = valor.Body[6]
+                        return f"{year:04d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"
+                    except:
+                        pass
+                
+                # Último recurso: string del objeto
+                return f"ExtensionObject:{str(valor)[:50]}"
+            except:
+                return f"ExtensionObject:{str(valor)[:50]}"
+        else:
+            return str(valor)[:50]  # Limitar longitud
+    else:
+        return str(valor)
+    
+    # Manejar tipos específicos de OPC UA
+    if hasattr(valor, '__class__'):
+        tipo_str = str(type(valor))
+        
+        # DInt (32-bit signed integer)
+        if 'DInt' in tipo_str:
+            try:
+                return int(valor)
+            except (ValueError, TypeError):
+                return 0
+        
+        # UDInt (32-bit unsigned integer)  
+        if 'UDInt' in tipo_str:
+            try:
+                return int(valor)
+            except (ValueError, TypeError):
+                return 0
+        
+        # UInt (32-bit unsigned integer)
+        if 'UInt' in tipo_str:
+            try:
+                return int(valor)
+            except (ValueError, TypeError):
+                return 0
+        
+        # Float
+        if 'Float' in tipo_str:
+            try:
+                return float(valor)
+            except (ValueError, TypeError):
+                return 0.0
+    
+    # Si es un tipo numérico complejo, convertir a simple
+    if hasattr(valor, 'real') and hasattr(valor, 'imag'):
+        return valor.real
+    
+    # Si es un array o lista
+    if isinstance(valor, (list, tuple)):
+        if len(valor) == 0:
+            return None
+        elif len(valor) == 1:
+            return valor[0]
+        else:
+            return str(valor)
+    
+    # Si es un diccionario
+    if isinstance(valor, dict):
+        if len(valor) == 0:
+            return None
+        elif len(valor) == 1:
+            return next(iter(valor.values()))
+        else:
+            return str(valor)
+    
+    # Para todos los demás casos, intentar conversión numérica
+    if isinstance(valor, (int, float)):
+        return valor
+    
+    # Si es string numérico, convertir
+    if isinstance(valor, str):
+        valor_limpio = valor.strip()
+        if valor_limpio.replace('.', '').replace('-', '').isdigit():
+            try:
+                if '.' in valor_limpio:
+                    return float(valor_limpio)
+                else:
+                    return int(valor_limpio)
+            except ValueError:
+                return valor_limpio
+    
+    # Para todos los demás casos, retornar el valor original
+    return valor
+
 async def leer_tags_eventos(tags_mapping: Dict[str, str]) -> Dict[str, Any]:
     """Lee todos los tags que comienzan con OPC_DATOS.REGISTRO_EVENTOS"""
     eventos_tags = [tag for tag in tags_mapping.keys() if tag.startswith("OPC_DATOS.REGISTRO_EVENTOS")]
@@ -234,16 +357,11 @@ async def leer_tags_eventos(tags_mapping: Dict[str, str]) -> Dict[str, Any]:
             node = client.get_node(nodeid)
             valor = await node.read_value()
             
-            # Procesar valor
-            if hasattr(valor, '__class__'):
-                tipo_str = str(type(valor))
-                if 'DInt' in tipo_str or 'UDInt' in tipo_str or 'UInt' in tipo_str:
-                    valor = int(valor) if valor is not None else 0
-                elif 'String' in tipo_str:
-                    valor = str(valor) if valor is not None else ""
+            # Manejar tipos complejos de OPC UA
+            valor_procesado = procesar_valor_opc_ua(valor)
+            valores[tag_key] = valor_procesado
             
-            valores[tag_key] = valor
-            log.debug(f"Leído {tag_key}: {valor}")
+            log.debug(f"Leído {tag_key}: {valor_procesado}")
             
         except Exception as e:
             log.warning(f"No se pudo leer tag {tag_key}: {e}")
