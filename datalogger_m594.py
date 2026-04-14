@@ -599,7 +599,36 @@ def procesar_trazabilidad(valores: Dict[str, Any], state_tracker: TablaStateTrac
                 log.info(f"  Trazabilidad - No se registra: misma OF={ultima_of == of_actual}, ciclo mayor={ciclo_actual > ultimo_ciclo if isinstance(ciclo_actual, (int, float)) and isinstance(ultimo_ciclo, (int, float)) else 'N/A'}")
     
     if debe_registrar:
-        # Preparar datos para inserción
+        # Implementar buffer de ciclos para no perder registros
+        ultimo_ciclo_registrado = state_tracker.get_estado("trazabilidad", "ciclo_actual")
+        ciclos_perdidos = []
+        
+        if ultimo_ciclo_registrado is not None:
+            # Calcular ciclos perdidos entre el último registrado y el actual
+            for ciclo_perdido in range(int(ultimo_ciclo_registrado) + 1, int(ciclo_actual)):
+                ciclos_perdidos.append(ciclo_perdido)
+        
+        # Registrar todos los ciclos perdidos
+        for ciclo in ciclos_perdidos:
+            datos = {
+                "ciclo_actual": ciclo,
+                "of": str(of_actual) if of_actual is not None else None,
+                "codigo_producto_terminado": valores.get("OPC_DATOS.TRAZABILIDAD.CODIGO_PRODUCTO_TERMINADO"),
+                "codigo_polo_1": valores.get("OPC_DATOS.TRAZABILIDAD.CODIGO_POLO_1"),
+                "codigo_polo_2": valores.get("OPC_DATOS.TRAZABILIDAD.CODIGO_POLO_2"),
+                "codigo_polo_3": valores.get("OPC_DATOS.TRAZABILIDAD.CODIGO_POLO_3"),
+                "codigo_polo_4": valores.get("OPC_DATOS.TRAZABILIDAD.CODIGO_POLO_4"),
+                "codigo_inspecciones": valores.get("OPC_DATOS.TRAZABILIDAD.CODIGO_INSPECCIONES"),
+                "turno": valores.get("OPC_DATOS.GENERAL.TURNO_ACTUAL"),
+                "fecha_hora": dt.now()
+            }
+            
+            if insertar_datos_tabla("trazabilidad", datos, None):
+                log.info(f" Trazabilidad - Registrado ciclo perdido {ciclo} para OF {of_actual}")
+            else:
+                log.error(f" Trazabilidad - Error insertando ciclo perdido {ciclo}")
+        
+        # Registrar el ciclo actual
         datos = {
             "ciclo_actual": int(ciclo_actual) if ciclo_actual is not None else 0,
             "of": str(of_actual) if of_actual is not None else None,
@@ -613,13 +642,20 @@ def procesar_trazabilidad(valores: Dict[str, Any], state_tracker: TablaStateTrac
             "fecha_hora": dt.now()
         }
         
-        # Actualizar estados
-        state_tracker.set_estado("trazabilidad", "ciclo_actual", ciclo_actual)
-        state_tracker.set_estado("trazabilidad", "of", of_actual)
-        
-        return datos
-    
-    return False
+        # Insertar en base de datos
+        if insertar_datos_tabla("trazabilidad", datos, None):
+            # Actualizar estado
+            state_tracker.set_estado("trazabilidad", "ciclo_actual", ciclo_actual)
+            state_tracker.set_estado("trazabilidad", "of", of_actual)
+            
+            if ciclos_perdidos:
+                log.info(f" Trazabilidad - Registrado ciclo actual {ciclo_actual} + {len(ciclos_perdidos)} ciclos perdidos para OF {of_actual}")
+            else:
+                log.info(f" Trazabilidad - Registrado ciclo {ciclo_actual} para OF {of_actual}")
+            return True
+        else:
+            log.error(f" Trazabilidad - Error insertando ciclo {ciclo_actual}")
+            return False
 
 def procesar_intervalo_programado(valores: Dict[str, Any], tabla_config: Dict[str, Any], 
                               state_tracker: TablaStateTracker, tabla_nombre: str) -> Optional[Dict[str, Any]]:
