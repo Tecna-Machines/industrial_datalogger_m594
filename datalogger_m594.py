@@ -650,12 +650,13 @@ def procesar_trazabilidad(valores: Dict[str, Any], state_tracker: TablaStateTrac
             
             if ciclos_perdidos:
                 log.info(f"  Trazabilidad - Registrado ciclo actual {ciclo_actual} + {len(ciclos_perdidos)} ciclos perdidos para OF {of_actual}")
+                return len(ciclos_perdidos) + 1  # ciclos perdidos + ciclo actual
             else:
                 log.info(f"  Trazabilidad - Registrado ciclo {ciclo_actual} para OF {of_actual}")
-            return True
+                return 1  # solo el ciclo actual
         else:
             log.error(f"  Trazabilidad - Error insertando ciclo {ciclo_actual}")
-            return False
+            return 0
 
 def procesar_intervalo_programado(valores: Dict[str, Any], tabla_config: Dict[str, Any], 
                               state_tracker: TablaStateTracker, tabla_nombre: str) -> Optional[Dict[str, Any]]:
