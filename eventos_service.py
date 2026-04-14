@@ -111,6 +111,19 @@ def load_tags_mapping() -> Dict[str, str]:
         log.error(f"Error al parsear tags.json: {e}")
         return {}
 
+def load_eventos_config() -> Dict[str, Any]:
+    """Carga la configuración específica de eventos"""
+    try:
+        with open("config_tablas_especializadas.json", "r", encoding="utf-8") as f:
+            config = json.load(f)
+            return config.get("tablas", {}).get("eventos", {})
+    except FileNotFoundError:
+        log.error("No se encontró el archivo config_tablas_especializadas.json")
+        return {}
+    except json.JSONDecodeError as e:
+        log.error(f"Error al parsear config_tablas_especializadas.json: {e}")
+        return {}
+
 def load_mysql_connection():
     """Crea conexión a MySQL"""
     try:
@@ -339,9 +352,9 @@ def procesar_valor_opc_ua(valor: Any) -> Any:
     # Para todos los demás casos, retornar el valor original
     return valor
 
-async def leer_tags_eventos(tags_mapping: Dict[str, str]) -> Dict[str, Any]:
-    """Lee todos los tags que comienzan con OPC_DATOS.REGISTRO_EVENTOS"""
-    eventos_tags = [tag for tag in tags_mapping.keys() if tag.startswith("OPC_DATOS.REGISTRO_EVENTOS")]
+async def leer_tags_eventos(tags_mapping: Dict[str, str], eventos_config: Dict[str, Any]) -> Dict[str, Any]:
+    """Lee solo los tags de eventos definidos en la configuración"""
+    eventos_tags = eventos_config.get("tags", [])
     
     valores = {}
     client = await get_opc_client()
@@ -433,13 +446,17 @@ def construir_fecha_desde_dtl(valores: Dict[str, Any], base_event: str) -> Optio
         log.error(f"Error construyendo fecha para {base_event}: {e}")
         return None
 
-def procesar_eventos(valores: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Procesa datos de eventos y devuelve lista de eventos para inserción"""
+def procesar_eventos(valores: Dict[str, Any], eventos_config: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Procesa datos de eventos usando la misma lógica que el script original"""
     eventos_registrados = []
     eventos_base = {}
     ahora = dt.now()
     
-    for tag, valor in valores.items():
+    # Iterar sobre los tags definidos en la configuración (igual que el original)
+    for tag in eventos_config.get("tags", []):
+        valor = valores.get(tag)
+        log.info(f"Evento {tag}: {valor} (tipo: {type(valor)})")
+        
         if valor is not None:
             # Extraer nombre base del evento y tipo de campo
             partes_tag = tag.split(".")
@@ -480,7 +497,7 @@ def procesar_eventos(valores: Dict[str, Any]) -> List[Dict[str, Any]]:
                 elif campo == "tiemposegundosacumulado":
                     eventos_base[evento_base]["tiempo_segundos_acumulado"] = valor
     
-    # Crear un registro por cada evento que tenga datos
+    # Crear un registro por cada evento que tenga datos (igual que el original)
     for evento_base, datos_evento in eventos_base.items():
         # Solo procesar eventos que tengan datos reales (no solo componentes DTL)
         if datos_evento and len([k for k in datos_evento.keys() if k != "_dtl_componentes"]) > 0:
@@ -571,6 +588,14 @@ async def run_eventos_service():
         log.error("No se pudo cargar mapeo de tags")
         return
     
+    # Cargar configuración específica de eventos
+    eventos_config = load_eventos_config()
+    if not eventos_config:
+        log.error("No se pudo cargar configuración de eventos")
+        return
+    
+    log.info(f"Cargados {len(eventos_config.get('tags', []))} tags de eventos")
+    
     # Estadísticas
     ciclos_totales = 0
     registros_totales = 0
@@ -582,11 +607,11 @@ async def run_eventos_service():
         while not _stop:
             ciclo_inicio = time.time()
             
-            # Leer tags de eventos
-            valores = await leer_tags_eventos(tags_mapping)
+            # Leer tags de eventos (usando configuración específica)
+            valores = await leer_tags_eventos(tags_mapping, eventos_config)
             
-            # Procesar eventos
-            eventos = procesar_eventos(valores)
+            # Procesar eventos (usando configuración específica)
+            eventos = procesar_eventos(valores, eventos_config)
             
             if eventos:
                 insertados = insertar_eventos(eventos)
