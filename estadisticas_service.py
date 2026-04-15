@@ -80,15 +80,40 @@ def install_signal_handlers():
     signal.signal(signal.SIGTERM, signal_handler)
 
 async def get_opc_client():
-    """Obtiene o crea una conexión OPC UA persistente"""
+    """Obtiene o crea una conexión OPC UA persistente con reconexión automática"""
     global _opc_client
     async with _opc_client_lock:
-        if _opc_client is None:
-            log.info("Conectando al servidor OPC UA...")
-            _opc_client = Client(url=OPC_ENDPOINT)
-            await _opc_client.connect()
-            log.info("Conexión OPC UA establecida")
-        return _opc_client
+        # Verificar si el cliente existe y está conectado
+        if _opc_client is not None:
+            try:
+                # Intentar una operación simple para verificar conexión
+                await _opc_client.get_namespace_array()
+                return _opc_client
+            except Exception:
+                log.warning("Conexión OPC UA perdida, intentando reconectar...")
+                try:
+                    await _opc_client.disconnect()
+                except:
+                    pass
+                _opc_client = None
+        
+        # Crear nueva conexión
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                log.info(f"Conectando al servidor OPC UA (intento {attempt + 1}/{max_retries})...")
+                _opc_client = Client(url=OPC_ENDPOINT)
+                await _opc_client.connect()
+                log.info("Conexión OPC UA establecida")
+                return _opc_client
+            except Exception as e:
+                log.error(f"Error conectando OPC UA (intento {attempt + 1}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(5)  # Esperar 5 segundos antes de reintentar
+                else:
+                    log.error("No se pudo establecer conexión OPC UA después de varios intentos")
+                    _opc_client = None
+                    return None
 
 async def close_opc_client():
     """Cierra la conexión OPC UA persistente"""
@@ -112,20 +137,48 @@ def load_tags_mapping() -> Dict[str, str]:
         return {}
 
 def load_mysql_connection():
-    """Crea conexión a MySQL"""
+    """Crea conexión a MySQL con reconexión automática"""
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            import mysql.connector
+            conn = mysql.connector.connect(
+                host=MYSQL_HOST,
+                port=MYSQL_PORT,
+                user=MYSQL_USER,
+                password=MYSQL_PASSWORD,
+                database=MYSQL_DB,
+                autocommit=True
+            )
+            
+            # Verificar que la conexión funciona con ping
+            if conn.is_connected():
+                log.info("Conexión MySQL establecida")
+                return conn
+            else:
+                log.warning(f"Conexión MySQL no estable (intento {attempt + 1})")
+                conn.close()
+                
+        except Exception as e:
+            log.error(f"Error conectando MySQL (intento {attempt + 1}): {e}")
+            
+        if attempt < max_retries - 1:
+            log.info(f"Esperando 5 segundos antes de reintentar conexión MySQL...")
+            time.sleep(5)
+        else:
+            log.error("No se pudo establecer conexión MySQL después de varios intentos")
+            return None
+
+def verify_mysql_connection(conn):
+    """Verifica si la conexión MySQL sigue activa y la repara si es necesario"""
     try:
-        import mysql.connector
-        return mysql.connector.connect(
-            host=MYSQL_HOST,
-            port=MYSQL_PORT,
-            user=MYSQL_USER,
-            password=MYSQL_PASSWORD,
-            database=MYSQL_DB,
-            autocommit=True
-        )
+        if conn is None or not conn.is_connected():
+            log.warning("Conexión MySQL perdida, intentando reconectar...")
+            return load_mysql_connection()
+        return conn
     except Exception as e:
-        log.error(f"Error conectando a MySQL: {e}")
-        return None
+        log.error(f"Error verificando conexión MySQL: {e}")
+        return load_mysql_connection()
 
 def ensure_estadisticas_table():
     """Asegura que la tabla estadisticas existe"""
@@ -179,21 +232,28 @@ def ensure_estadisticas_table():
         conn.close()
 
 def insertar_estadisticas(datos: Dict[str, Any]) -> bool:
-    """Inserta datos de estadísticas en la base de datos"""
+    """Inserta datos de estadísticas en la base de datos con reconexión automática"""
+    if not datos:
+        return False
+    
+    # Obtener conexión con verificación automática
     conn = load_mysql_connection()
     if not conn:
         return False
     
     try:
+        # Verificar conexión antes de usar
+        conn = verify_mysql_connection(conn)
+        if not conn:
+            return False
+        
         cursor = conn.cursor()
         
         sql = """
         INSERT INTO estadisticas (buenas_totales, malas_totales, produccion_faltante,
-                                 malas_por_e1_qr, malas_por_e1_inspeccioninicial, 
-                                 malas_por_e3_verificacionintegral, malas_por_e6_remacheysoldadura,
-                                 malas_por_e10_presenciaacoples, malas_por_e11_polonoutilizado,
-                                 malas_por_e12_testalturatermica, malas_por_e14_inspeccionfinal,
-                                 `of`, turno, fecha_hora)
+                                  malas_por_e1_qr, malas_por_e1_inspeccioninicial, malas_por_e3_verificacionintegral,
+                                  malas_por_e6_remacheysoldadura, malas_por_e10_presenciaacoples, malas_por_e11_polonoutilizado,
+                                  malas_por_e12_testalturatermica, malas_por_e14_inspeccionfinal, of, turno, fecha_hora)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         
@@ -220,10 +280,26 @@ def insertar_estadisticas(datos: Dict[str, Any]) -> bool:
         
     except Exception as e:
         log.error(f"Error insertando en estadisticas: {e}")
+        # Intentar reconectar y reintentar una vez
+        try:
+            conn = verify_mysql_connection(None)
+            if conn:
+                cursor = conn.cursor()
+                cursor.execute(sql, values)
+                log.info(f"Reintentado insertado en estadisticas: {datos}")
+                return True
+        except Exception as retry_e:
+            log.error(f"Error en reintento insertando estadisticas: {retry_e}")
         return False
     finally:
-        cursor.close()
-        conn.close()
+        try:
+            cursor.close()
+        except:
+            pass
+        try:
+            conn.close()
+        except:
+            pass
 
 async def leer_tags_estadisticas(tags_mapping: Dict[str, str]) -> Dict[str, Any]:
     """Lee solo los tags necesarios para estadísticas"""
