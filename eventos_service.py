@@ -199,7 +199,7 @@ def insertar_eventos(lista_eventos: List[Dict[str, Any]]) -> int:
         
         sql = """
         INSERT INTO eventos (id_evento, categoria, cantidad_eventos,
-                            tiempo_segundos_acumulado, turno, fecha_y_hora, of, fecha_hora_registro)
+                            tiempo_segundos_acumulado, turno, fecha_y_hora, `of`, fecha_hora_registro)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """
         
