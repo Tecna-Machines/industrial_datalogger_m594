@@ -198,9 +198,9 @@ def insertar_eventos(lista_eventos: List[Dict[str, Any]]) -> int:
         cursor = conn.cursor()
         
         sql = """
-        INSERT INTO eventos (id_evento, categoria, nombre_evento, cantidad_eventos,
-                            tiempo_segundos_acumulado, turno, fecha_hora)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO eventos (id_evento, categoria, cantidad_eventos,
+                            tiempo_segundos_acumulado, turno, fecha_y_hora, of, fecha_hora_registro)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """
         
         valores_insertados = 0
@@ -208,11 +208,12 @@ def insertar_eventos(lista_eventos: List[Dict[str, Any]]) -> int:
             values = (
                 evento.get("id_evento"),
                 evento.get("categoria"),
-                evento.get("nombre_evento"),
                 evento.get("cantidad_eventos"),
                 evento.get("tiempo_segundos_acumulado"),
                 evento.get("turno"),
-                evento.get("fecha_hora")
+                evento.get("fecha_hora"),
+                evento.get("of"),
+                evento.get("fecha_hora_registro", dt.now())
             )
             
             cursor.execute(sql, values)
@@ -560,11 +561,12 @@ def procesar_eventos(valores: Dict[str, Any], eventos_config: Dict[str, Any]) ->
         evento_formateado = {
             "id_evento": evento.get("id_evento"),
             "categoria": evento.get("categoria"),
-            "nombre_evento": evento_base.split(".")[-1] if "evento_base" in locals() else "desconocido",
             "cantidad_eventos": evento.get("cantidad_eventos"),
             "tiempo_segundos_acumulado": evento.get("tiempo_segundos_acumulado"),
             "turno": evento.get("turno"),
-            "fecha_hora": evento.get("fecha_y_hora", evento.get("fecha_hora_registro", dt.now()))
+            "fecha_hora": evento.get("fecha_y_hora", evento.get("fecha_hora_registro", dt.now())),
+            "of": evento.get("of"),
+            "fecha_hora_registro": evento.get("fecha_hora_registro", dt.now())
         }
         eventos_formateados.append(evento_formateado)
     
