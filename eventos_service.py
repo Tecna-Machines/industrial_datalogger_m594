@@ -73,22 +73,48 @@ def install_signal_handlers():
     """Instala manejadores de señales para parada controlada"""
     def signal_handler(signum, frame):
         global _stop
-        log.info(f"Señal de parada recibida ({signum}). Cerrando...")
-        _stop = True
+        if not _stop:  # Solo mostrar mensaje la primera vez
+            log.info(f"Señal de parada recibida ({signum}). Cerrando...")
+            _stop = True
     
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
 async def get_opc_client():
-    """Obtiene o crea una conexión OPC UA persistente"""
+    """Obtiene o crea una conexión OPC UA persistente con reconexión automática"""
     global _opc_client
     async with _opc_client_lock:
-        if _opc_client is None:
-            log.info("Conectando al servidor OPC UA...")
-            _opc_client = Client(url=OPC_ENDPOINT)
-            await _opc_client.connect()
-            log.info("Conexión OPC UA establecida")
-        return _opc_client
+        # Verificar si el cliente existe y está conectado
+        if _opc_client is not None:
+            try:
+                # Intentar una operación simple para verificar conexión
+                await _opc_client.get_namespace_array()
+                return _opc_client
+            except Exception:
+                log.warning("Conexión OPC UA perdida, intentando reconectar...")
+                try:
+                    await _opc_client.disconnect()
+                except:
+                    pass
+                _opc_client = None
+        
+        # Crear nueva conexión
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                log.info(f"Conectando al servidor OPC UA (intento {attempt + 1}/{max_retries})...")
+                _opc_client = Client(url=OPC_ENDPOINT)
+                await _opc_client.connect()
+                log.info("Conexión OPC UA establecida")
+                return _opc_client
+            except Exception as e:
+                log.error(f"Error conectando OPC UA (intento {attempt + 1}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(5)  # Esperar 5 segundos antes de reintentar
+                else:
+                    log.error("No se pudo establecer conexión OPC UA después de varios intentos")
+                    _opc_client = None
+                    return None
 
 async def close_opc_client():
     """Cierra la conexión OPC UA persistente"""
@@ -125,20 +151,48 @@ def load_eventos_config() -> Dict[str, Any]:
         return {}
 
 def load_mysql_connection():
-    """Crea conexión a MySQL"""
+    """Crea conexión a MySQL con reconexión automática"""
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            import mysql.connector
+            conn = mysql.connector.connect(
+                host=MYSQL_HOST,
+                port=MYSQL_PORT,
+                user=MYSQL_USER,
+                password=MYSQL_PASSWORD,
+                database=MYSQL_DB,
+                autocommit=True
+            )
+            
+            # Verificar que la conexión funciona con ping
+            if conn.is_connected():
+                log.info("Conexión MySQL establecida")
+                return conn
+            else:
+                log.warning(f"Conexión MySQL no estable (intento {attempt + 1})")
+                conn.close()
+                
+        except Exception as e:
+            log.error(f"Error conectando MySQL (intento {attempt + 1}): {e}")
+            
+        if attempt < max_retries - 1:
+            log.info(f"Esperando 5 segundos antes de reintentar conexión MySQL...")
+            time.sleep(5)
+        else:
+            log.error("No se pudo establecer conexión MySQL después de varios intentos")
+            return None
+
+def verify_mysql_connection(conn):
+    """Verifica si la conexión MySQL sigue activa y la repara si es necesario"""
     try:
-        import mysql.connector
-        return mysql.connector.connect(
-            host=MYSQL_HOST,
-            port=MYSQL_PORT,
-            user=MYSQL_USER,
-            password=MYSQL_PASSWORD,
-            database=MYSQL_DB,
-            autocommit=True
-        )
+        if conn is None or not conn.is_connected():
+            log.warning("Conexión MySQL perdida, intentando reconectar...")
+            return load_mysql_connection()
+        return conn
     except Exception as e:
-        log.error(f"Error conectando a MySQL: {e}")
-        return None
+        log.error(f"Error verificando conexión MySQL: {e}")
+        return load_mysql_connection()
 
 def ensure_eventos_table():
     """Asegura que la tabla eventos existe"""
@@ -186,15 +240,21 @@ def ensure_eventos_table():
         conn.close()
 
 def insertar_eventos(lista_eventos: List[Dict[str, Any]]) -> int:
-    """Inserta múltiples eventos en la base de datos"""
+    """Inserta múltiples eventos en la base de datos con reconexión automática"""
     if not lista_eventos:
         return 0
     
+    # Obtener conexión con verificación automática
     conn = load_mysql_connection()
     if not conn:
         return 0
     
     try:
+        # Verificar conexión antes de usar
+        conn = verify_mysql_connection(conn)
+        if not conn:
+            return 0
+        
         cursor = conn.cursor()
         
         sql = """
@@ -225,10 +285,38 @@ def insertar_eventos(lista_eventos: List[Dict[str, Any]]) -> int:
         
     except Exception as e:
         log.error(f"Error insertando eventos: {e}")
+        # Intentar reconectar y reintentar una vez
+        try:
+            conn = verify_mysql_connection(None)
+            if conn:
+                cursor = conn.cursor()
+                for evento in lista_eventos:
+                    values = (
+                        evento.get("id_evento"),
+                        evento.get("categoria"),
+                        evento.get("cantidad_eventos"),
+                        evento.get("tiempo_segundos_acumulado"),
+                        evento.get("turno"),
+                        evento.get("fecha_hora"),
+                        evento.get("of"),
+                        evento.get("fecha_hora_registro", dt.now())
+                    )
+                    cursor.execute(sql, values)
+                    valores_insertados += 1
+                log.info(f"Reintentado insertado {valores_insertados} eventos")
+                return valores_insertados
+        except Exception as retry_e:
+            log.error(f"Error en reintento insertando eventos: {retry_e}")
         return 0
     finally:
-        cursor.close()
-        conn.close()
+        try:
+            cursor.close()
+        except:
+            pass
+        try:
+            conn.close()
+        except:
+            pass
 
 def procesar_valor_opc_ua(valor: Any) -> Any:
     """
@@ -630,7 +718,10 @@ async def run_eventos_service():
             ciclo_tiempo = time.time() - ciclo_inicio
             espera = max(30, 60.0 - ciclo_tiempo)  # Mínimo 30 segundos
             if espera > 0:
-                await asyncio.sleep(espera)
+                # Usar sleep con verificación periódica de _stop
+                start_wait = time.time()
+                while time.time() - start_wait < espera and not _stop:
+                    await asyncio.sleep(1)  # Verificar cada segundo
     
     finally:
         await close_opc_client()
