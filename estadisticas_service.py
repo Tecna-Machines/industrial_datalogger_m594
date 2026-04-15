@@ -73,9 +73,11 @@ def install_signal_handlers():
     """Instala manejadores de señales para parada controlada"""
     def signal_handler(signum, frame):
         global _stop
-        log.info(f"Señal de parada recibida ({signum}). Cerrando...")
-        _stop = True
+        if not _stop:  # Solo mostrar mensaje la primera vez
+            log.info(f"Señal de parada recibida ({signum}). Cerrando...")
+            _stop = True
     
+    # Usar signal.SIG_DFL para restaurar comportamiento por defecto después de manejar
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
