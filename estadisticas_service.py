@@ -255,7 +255,7 @@ def insertar_estadisticas(datos: Dict[str, Any]) -> bool:
         INSERT INTO estadisticas (buenas_totales, malas_totales, produccion_faltante,
                                   malas_por_e1_qr, malas_por_e1_inspeccioninicial, malas_por_e3_verificacionintegral,
                                   malas_por_e6_remacheysoldadura, malas_por_e10_presenciaacoples, malas_por_e11_polonoutilizado,
-                                  malas_por_e12_testalturatermica, malas_por_e14_inspeccionfinal, of, turno, fecha_hora)
+                                  malas_por_e12_testalturatermica, malas_por_e14_inspeccionfinal, `of`, turno, fecha_hora)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         
@@ -436,7 +436,10 @@ async def run_estadisticas_service():
             espera = max(300, 3600.0 - ciclo_tiempo)  # Mínimo 5 minutos
             if espera > 0:
                 log.info(f"Estadísticas - Esperando {espera:.0f} segundos para próximo ciclo...")
-                await asyncio.sleep(espera)
+                # Usar sleep con verificación periódica de _stop
+                start_wait = time.time()
+                while time.time() - start_wait < espera and not _stop:
+                    await asyncio.sleep(1)  # Verificar cada segundo
     
     finally:
         await close_opc_client()
