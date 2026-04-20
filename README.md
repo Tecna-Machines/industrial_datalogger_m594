@@ -18,7 +18,7 @@ Sistema de recolección de datos industriales para la máquina M594 con servicio
 
 ## 🎯 Visión General
 
-El datalogger M594 es un sistema modular que recolecta datos de una máquina industrial a través del protocolo OPC UA y los almacena en una base de datos MySQL. El sistema está diseñado para ser robusto, con reconexión automática y manejo de errores.
+El datalogger M594 es un sistema modular que recolecta datos de la máquina M594 a través del protocolo OPC UA para almacenarlos en una base de datos MySQL. El sistema está diseñado para ser robusto, con reconexión automática y manejo de errores.
 
 ### Características Principales
 - **Recolección en tiempo real** de datos de producción
@@ -31,8 +31,8 @@ El datalogger M594 es un sistema modular que recolecta datos de una máquina ind
 
 ```
 ┌─────────────────┐    ┌─────────────────┐
-│   Máquina M594 │────│   Base de     │
-│   (PLC con OPC UA) │    │   Datos MySQL  │
+│   Máquina M594  │    │   Base de       │
+│   (OPC UA)│    │   Datos MySQL  │
 │                 │    │                │
 └─────────────────┘    └─────────────────┘
          │                       │
@@ -118,7 +118,7 @@ El datalogger M594 es un sistema modular que recolecta datos de una máquina ind
 
 **Propósito**: Registrar eventos de parada y alarmas del sistema con su duración y frecuencia.
 
-**Frecuencia**: Cada 60 segundos (1 minuto)
+**Frecuencia**: Cada 3600 segundos (1 hora)
 
 **Datos que recolecta**:
 - ID del evento
@@ -133,7 +133,7 @@ El datalogger M594 es un sistema modular que recolecta datos de una máquina ind
 **Flujo de operación**:
 1. Conecta al servidor OPC UA
 2. Lee configuración desde `config_tablas_especializadas.json`
-3. Lee tags de eventos cada minuto
+3. Lee tags de eventos cada hora
 4. Procesa y formatea datos de eventos
 5. Inserta múltiples eventos en la base de datos
 6. Repite el ciclo
@@ -400,6 +400,15 @@ sudo systemctl start datalogger-estadisticas
 sudo systemctl start datalogger-eventos
 sudo systemctl start datalogger-oee
 ```
+
+## Ejecutar como servicio con NSSM en Windows 11
+nssm install nombre_del_servicio
+En la pestaña "Application" configurar:
+- Path: ruta al ejecutable de Python
+- Arguments: ruta al script principal
+- Working directory: ruta al directorio del proyecto
+En la pestaña I/O redirigir los streams de salida a archivos de log
+En la pestaña de File rotation configurar la rotación de logs
 
 ## 📊 Monitoreo y Logs
 
