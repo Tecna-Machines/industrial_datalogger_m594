@@ -402,13 +402,15 @@ sudo systemctl start datalogger-oee
 ```
 
 ## Ejecutar como servicio con NSSM en Windows 11
+```
 nssm install nombre_del_servicio
-En la pestaña "Application" configurar:
+```
+#### En la pestaña "Application" configurar:
 - Path: ruta al ejecutable de Python
 - Arguments: ruta al script principal
 - Working directory: ruta al directorio del proyecto
-En la pestaña I/O redirigir los streams de salida a archivos de log
-En la pestaña de File rotation configurar la rotación de logs
+#### En la pestaña I/O redirigir los streams de salida a archivos de log
+#### En la pestaña de File rotation configurar la rotación de logs
 
 ## 📊 Monitoreo y Logs
 
