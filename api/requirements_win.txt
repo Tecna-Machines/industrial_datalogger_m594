@@ -1,0 +1,82 @@
+# Requirements para Windows - Librerías compatibles y probadas
+# Excluidas librerías con problemas de compilación o específicas de Unix/Linux
+
+# Core FastAPI (funciona perfectamente en Windows)
+fastapi==0.135.3
+starlette==1.0.0
+pydantic==2.13.1
+pydantic-core==2.46.1
+pydantic-settings==2.14.0
+pydantic-extra-types==2.11.1
+
+# Servidor web (compatible con Windows)
+uvicorn==0.44.0
+h11==0.16.0
+
+# MySQL (versión compatible con Windows)
+mysql-connector-python==9.6.0
+
+# Environment variables
+python-dotenv==1.2.2
+dotenv==0.9.9
+
+# HTTP y networking (compatibles con Windows)
+httpx==0.28.1
+httpcore==1.0.9
+anyio==4.13.0
+urllib3==2.6.3
+
+# Utilidades y validación
+click==8.3.2
+typer==0.24.1
+rich==15.0.0
+email-validator==2.3.0
+python-multipart==0.0.26
+
+# Templates y procesamiento
+Jinja2==3.1.6
+MarkupSafe==3.0.3
+PyYAML==6.0.3
+
+# Certificados y seguridad (versión wheel para Windows)
+certifi==2026.2.25
+
+# DNS (compatible con Windows)
+dnspython==2.8.0
+idna==3.11
+
+# Logging y debugging
+Pygments==2.20.0
+
+# Tipado y anotaciones
+typing-extensions==4.15.0
+annotated-types==0.7.0
+typing-inspection==0.4.2
+
+# WebSockets (compatible con Windows)
+websockets==16.0
+
+# File watching (compatible con Windows)
+watchfiles==1.1.1
+
+# Markdown processing
+markdown-it-py==4.0.0
+mdurl==0.1.2
+
+# Cloud CLI (opcional, compatible)
+fastapi-cli==0.0.24
+fastapi-cloud-cli==0.17.0
+
+# NOTA: Librerías eliminadas por problemas en Windows:
+# - uvloop (específico de Unix/Linux)
+# - cryptography (requiere compilación, usar wheel si es necesario)
+# - cffi (requiere compilación)
+# - pycparser (dependencia problemática)
+# - sentry-sdk (opcional, puede requerir compilación)
+
+# Si necesitas cryptography para SSL/TLS:
+# pip install cryptography --only-binary=cryptography
+
+# Para asyncua (OPC UA) en Windows:
+# pip install asyncua --only-binary=asyncua
+# O instalar Microsoft Visual C++ Build Tools si hay errores de compilación
