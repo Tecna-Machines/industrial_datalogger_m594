@@ -724,7 +724,7 @@ async def run_estadisticas_service():
                     cambio_detectado = await detectar_y_registrar_cambio_of(tags_mapping, of_anterior)
                     ultima_deteccion_of = time.time()
                     
-                    # Si se detectó cambio, actualizar of_anterior con la OF actual
+                    # Si se detectó cambio, actualizar of_anterior inmediatamente con la OF actual
                     if cambio_detectado:
                         if of_actual and of_actual != of_anterior:
                             of_anterior = of_actual
