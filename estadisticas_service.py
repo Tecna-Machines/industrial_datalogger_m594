@@ -350,6 +350,194 @@ async def leer_tags_estadisticas(tags_mapping: Dict[str, str]) -> Dict[str, Any]
     
     return valores
 
+async def detectar_y_registrar_cambio_of(tags_mapping: Dict[str, str], of_anterior: str) -> bool:
+    """
+    Detecta cambio de OF comparando OF actual vs última OF registrada.
+    Registra datos de HISTORICO_DATOS_ULTIMA_OF cuando se detecta cambio.
+    """
+    try:
+        client = await get_opc_client()
+        
+        # Leer OF actual
+        nodeid = tags_mapping.get("OPC_DATOS.GENERAL.OF")
+        if not nodeid:
+            log.warning("No se encontró NodeId para tag OPC_DATOS.GENERAL.OF")
+            return False
+        
+        node = client.get_node(nodeid)
+        of_actual = await node.read_value()
+        
+        # Procesar valor numérico
+        if hasattr(of_actual, '__class__'):
+            tipo_str = str(type(of_actual))
+            if 'DInt' in tipo_str or 'UDInt' in tipo_str or 'UInt' in tipo_str:
+                of_actual = int(of_actual) if of_actual is not None else 0
+        
+        # Convertir a string para comparación
+        of_actual_str = str(of_actual)
+        
+        # Solo registrar si hay cambio real y hay OF anterior
+        if (of_actual_str is not None and 
+            of_anterior is not None and 
+            of_actual_str != of_anterior and 
+            of_anterior != "0"):  # No registrar si la OF anterior era 0
+            
+            log.info(f"Estadísticas - CAMBIO DE OF DETECTADO: {of_anterior} → {of_actual_str}")
+            
+            # Leer datos completos del HISTORICO_DATOS_ULTIMA_OF
+            datos_historicos = await leer_historico_ultima_of(tags_mapping)
+            
+            if datos_historicos:
+                # Registrar estadísticas finales
+                if await registrar_datos_finales_estadisticas(datos_historicos, of_anterior):
+                    # Registrar OEE finales
+                    await registrar_datos_finales_oee(datos_historicos, of_anterior)
+                    log.info(f"Estadísticas - REGISTROS FINALES guardados para OF {of_anterior}")
+                    return True
+                else:
+                    log.error(f"Estadísticas - Error guardando registros finales para OF {of_anterior}")
+                    return False
+            else:
+                log.warning(f"Estadísticas - No se pudieron leer datos históricos para OF {of_anterior}")
+        
+        return True  # No hay cambio de OF o no hay datos históricos
+        
+    except Exception as e:
+        log.error(f"Error en detección de cambio de OF: {e}")
+        return False
+
+async def leer_historico_ultima_of(tags_mapping: Dict[str, str]) -> Dict[str, Any]:
+    """
+    Lee todos los datos de la estructura HISTORICO_DATOS_ULTIMA_OF
+    """
+    try:
+        client = await get_opc_client()
+        
+        # Tags de estadísticas en el histórico
+        tags_estadisticas_historico = [
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.BuenasTotales",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasTotales",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.ProduccionFaltante",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E1_QR",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E1_InspeccionInicial",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E3_VerificacionIntegral",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E6_RemacheYSoldadura",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E10_PresenciaAcoples",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E11_PoloNoUtilizado",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E12_TestAlturaTermica",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E14_InspeccionFinal"
+        ]
+        
+        # Tags de OEE en el histórico
+        tags_oee_historico = [
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.CANT_PARADAS",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.DownTime_Minutos",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.DownTime_Minutos_Externo",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.Disponibilidad",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.Performance",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.Calidad",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.OEE",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.PorcentajeStop",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.PorcentajeScrap"
+        ]
+        
+        # Tags generales en el histórico
+        tags_generales_historico = [
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.GENERAL.OF",
+            "OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.GENERAL.TURNO_ACTUAL"
+        ]
+        
+        # Leer todos los tags
+        datos_historicos = {}
+        all_tags = tags_estadisticas_historico + tags_oee_historico + tags_generales_historico
+        
+        for tag_key in all_tags:
+            try:
+                nodeid = tags_mapping.get(tag_key)
+                if not nodeid:
+                    log.warning(f"No se encontró NodeId para tag histórico {tag_key}")
+                    continue
+                
+                node = client.get_node(nodeid)
+                valor = await node.read_value()
+                
+                # Procesar valor según tipo
+                if hasattr(valor, '__class__'):
+                    tipo_str = str(type(valor))
+                    if 'DInt' in tipo_str or 'UDInt' in tipo_str or 'UInt' in tipo_str or 'SINT' in tipo_str:
+                        valor = int(valor) if valor is not None else 0
+                    elif 'REAL' in tipo_str:
+                        valor = float(valor) if valor is not None else 0.0
+                
+                datos_historicos[tag_key] = valor
+                
+            except Exception as e:
+                log.warning(f"No se pudo leer tag histórico {tag_key}: {e}")
+                datos_historicos[tag_key] = None
+        
+        return datos_historicos
+        
+    except Exception as e:
+        log.error(f"Error leyendo datos históricos: {e}")
+        return {}
+
+async def registrar_datos_finales_estadisticas(datos_historicos: Dict[str, Any], of_anterior: str) -> bool:
+    """
+    Registra los datos finales de estadísticas desde HISTORICO_DATOS_ULTIMA_OF
+    """
+    try:
+        datos_finales = {
+            "buenas_totales": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.BuenasTotales"),
+            "malas_totales": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasTotales"),
+            "produccion_faltante": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.ProduccionFaltante"),
+            "malas_por_e1_qr": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E1_QR"),
+            "malas_por_e1_inspeccioninicial": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E1_InspeccionInicial"),
+            "malas_por_e3_verificacionintegral": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E3_VerificacionIntegral"),
+            "malas_por_e6_remacheysoldadura": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E6_RemacheYSoldadura"),
+            "malas_por_e10_presenciaacoples": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E10_PresenciaAcoples"),
+            "malas_por_e11_polonoutilizado": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E11_PoloNoUtilizado"),
+            "malas_por_e12_testalturatermica": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E12_TestAlturaTermica"),
+            "malas_por_e14_inspeccionfinal": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E14_InspeccionFinal"),
+            "of": str(of_anterior) if of_anterior else "DESCONOCIDA",
+            "turno": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.GENERAL.TURNO_ACTUAL"),
+            "fecha_hora": dt.now()
+        }
+        
+        return insertar_estadisticas(datos_finales)
+        
+    except Exception as e:
+        log.error(f"Error registrando datos finales de estadísticas: {e}")
+        return False
+
+async def registrar_datos_finales_oee(datos_historicos: Dict[str, Any], of_anterior: str) -> bool:
+    """
+    Registra los datos finales de OEE desde HISTORICO_DATOS_ULTIMA_OF
+    """
+    try:
+        # Importar aquí para evitar import circular
+        from oee_service import insertar_oee
+        
+        datos_finales = {
+            "cant_paradas": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.CANT_PARADAS"),
+            "downtime_minutos": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.DownTime_Minutos"),
+            "downtime_minutos_externo": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.DownTime_Minutos_Externo"),
+            "disponibilidad": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.Disponibilidad"),
+            "performance": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.Performance"),
+            "calidad": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.Calidad"),
+            "oee": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.OEE"),
+            "porcentaje_stop": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.PorcentajeStop"),
+            "porcentaje_scrap": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.PorcentajeScrap"),
+            "of": str(of_anterior) if of_anterior else "DESCONOCIDA",
+            "turno": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.GENERAL.TURNO_ACTUAL"),
+            "fecha_hora": dt.now()
+        }
+        
+        return insertar_oee(datos_finales)
+        
+    except Exception as e:
+        log.error(f"Error registrando datos finales de OEE: {e}")
+        return False
+
 def procesar_estadisticas(valores: Dict[str, Any]) -> Dict[str, Any]:
     """Procesa datos de estadísticas para inserción"""
     of_actual = valores.get("OPC_DATOS.GENERAL.OF")
@@ -400,16 +588,26 @@ async def run_estadisticas_service():
         log.error("No se pudo cargar mapeo de tags")
         return
     
+    # Variables para detección de cambio de OF
+    of_anterior = None
+    ultima_deteccion_of = time.time()
+    
     # Estadísticas
     ciclos_totales = 0
     registros_totales = 0
     ultimo_log_stats = time.time()
     
     log.info("Iniciando ciclo de estadísticas (cada 3600 segundos)...")
+    log.info("Estadísticas - Detección de cambio de OF cada 60 segundos")
     
     try:
         while not _stop:
             ciclo_inicio = time.time()
+            
+            # DETECCIÓN DE CAMBIO DE OF (cada 60 segundos)
+            if time.time() - ultima_deteccion_of >= 60:
+                await detectar_y_registrar_cambio_of(tags_mapping, of_anterior)
+                ultima_deteccion_of = time.time()
             
             # Leer tags de estadísticas
             valores = await leer_tags_estadisticas(tags_mapping)
@@ -418,6 +616,13 @@ async def run_estadisticas_service():
             datos = procesar_estadisticas(valores)
             
             if datos:
+                of_actual = datos.get('of')
+                
+                # Actualizar OF anterior si cambió
+                if of_anterior != of_actual:
+                    log.info(f"Estadísticas - Cambio de OF detectado: {of_anterior} → {of_actual}")
+                    of_anterior = of_actual
+                
                 if insertar_estadisticas(datos):
                     registros_totales += 1
                     log.info(f"Estadísticas - Registrado para OF {datos.get('of')}")
@@ -436,10 +641,14 @@ async def run_estadisticas_service():
             espera = max(300, 3600.0 - ciclo_tiempo)  # Mínimo 5 minutos
             if espera > 0:
                 log.info(f"Estadísticas - Esperando {espera:.0f} segundos para próximo ciclo...")
-                # Usar sleep con verificación periódica de _stop
+                # Usar sleep con verificación periódica de _stop y detección de OF
                 start_wait = time.time()
                 while time.time() - start_wait < espera and not _stop:
                     await asyncio.sleep(1)  # Verificar cada segundo
+                    # Verificar cambio de OF durante la espera
+                    if time.time() - ultima_deteccion_of >= 60:
+                        await detectar_y_registrar_cambio_of(tags_mapping, of_anterior)
+                        ultima_deteccion_of = time.time()
     
     finally:
         await close_opc_client()
