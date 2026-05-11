@@ -718,6 +718,7 @@ async def run_estadisticas_service():
                 # Inicializar of_anterior si es None
                 if of_anterior is None:
                     of_anterior = of_actual
+                    log.info(f"Estadísticas - of_anterior inicializado a: {of_anterior}")
                 
                 # DETECCIÓN DE CAMBIO DE OF (cada 60 segundos)
                 if time.time() - ultima_deteccion_of >= 60:
@@ -727,8 +728,10 @@ async def run_estadisticas_service():
                     # Si se detectó cambio, actualizar of_anterior inmediatamente con la OF actual
                     if cambio_detectado:
                         if of_actual and of_actual != of_anterior:
+                            log.info(f"Estadísticas - Actualizando of_anterior: {of_anterior} → {of_actual}")
                             of_anterior = of_actual
-                            log.info(f"Estadísticas - of_anterior actualizado a: {of_anterior}")
+                        else:
+                            log.info(f"Estadísticas - Cambio detectado pero of_actual es None o igual: of_actual={of_actual}, of_anterior={of_anterior}")
                 
                 if insertar_estadisticas(datos):
                     registros_totales += 1
@@ -740,7 +743,7 @@ async def run_estadisticas_service():
             
             # Estadísticas cada 60 segundos
             if time.time() - ultimo_log_stats >= 60:
-                log.info(f"Estadísticas - Estadísticas: {ciclos_totales} ciclos, {registros_totales} registros totales")
+                log.info(f"Estadísticas - Estadísticas: {ciclos_totales} ciclos, {registros_totales} registros totales, of_anterior={of_anterior}")
                 ultimo_log_stats = time.time()
             
             # Esperar para próximo ciclo (3600 segundos = 1 hora)
@@ -754,8 +757,17 @@ async def run_estadisticas_service():
                     await asyncio.sleep(1)  # Verificar cada segundo
                     # Verificar cambio de OF durante la espera
                     if time.time() - ultima_deteccion_of >= 60:
-                        await detectar_y_registrar_cambio_of(tags_mapping, of_anterior)
+                        cambio_detectado = await detectar_y_registrar_cambio_of(tags_mapping, of_anterior)
                         ultima_deteccion_of = time.time()
+                        if cambio_detectado:
+                            # Leer OF actual durante la espera
+                            valores_temp = await leer_tags_estadisticas(tags_mapping)
+                            datos_temp = procesar_estadisticas(valores_temp)
+                            if datos_temp:
+                                of_actual_temp = datos_temp.get('of')
+                                if of_actual_temp and of_actual_temp != of_anterior:
+                                    log.info(f"Estadísticas - Actualizando of_anterior durante espera: {of_anterior} → {of_actual_temp}")
+                                    of_anterior = of_actual_temp
     
     finally:
         await close_opc_client()
