@@ -391,11 +391,15 @@ async def detectar_y_registrar_cambio_of(tags_mapping: Dict[str, str], of_anteri
                 # Registrar estadísticas finales
                 if await registrar_datos_finales_estadisticas(datos_historicos, of_anterior):
                     # Registrar OEE finales
-                    await registrar_datos_finales_oee(datos_historicos, of_anterior)
-                    log.info(f"Estadísticas - REGISTROS FINALES guardados para OF {of_anterior}")
-                    return True
+                    oee_result = await registrar_datos_finales_oee(datos_historicos, of_anterior)
+                    if oee_result:
+                        log.info(f"Estadísticas - REGISTROS FINALES guardados para OF {of_anterior}")
+                        return True
+                    else:
+                        log.error(f"Estadísticas - Error guardando OEE final para OF {of_anterior}")
+                        return False
                 else:
-                    log.error(f"Estadísticas - Error guardando registros finales para OF {of_anterior}")
+                    log.error(f"Estadísticas - Error guardando estadísticas finales para OF {of_anterior}")
                     return False
             else:
                 log.warning(f"Estadísticas - No se pudieron leer datos históricos para OF {of_anterior}")
@@ -578,35 +582,35 @@ async def insertar_oee_directo(datos: Dict[str, Any]) -> bool:
         return False
     
     conn = None
+    cursor = None
+    sql = """
+    INSERT INTO oee (cant_paradas, downtime_minutos, downtime_minutos_externo,
+                    disponibilidad, performance, calidad, oee, porcentaje_stop,
+                    porcentaje_scrap, `of`, turno, fecha_hora)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
+    
+    values = (
+        datos.get("cant_paradas"),
+        datos.get("downtime_minutos"),
+        datos.get("downtime_minutos_externo"),
+        datos.get("disponibilidad"),
+        datos.get("performance"),
+        datos.get("calidad"),
+        datos.get("oee"),
+        datos.get("porcentaje_stop"),
+        datos.get("porcentaje_scrap"),
+        datos.get("of"),
+        datos.get("turno"),
+        datos.get("fecha_hora")
+    )
+    
     try:
-        conn = get_mysql_connection()
+        conn = verify_mysql_connection(None)
         if not conn:
             return False
         
         cursor = conn.cursor()
-        
-        sql = """
-        INSERT INTO oee (cant_paradas, downtime_minutos, downtime_minutos_externo,
-                        disponibilidad, performance, calidad, oee, porcentaje_stop,
-                        porcentaje_scrap, `of`, turno, fecha_hora)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """
-        
-        values = (
-            datos.get("cant_paradas"),
-            datos.get("downtime_minutos"),
-            datos.get("downtime_minutos_externo"),
-            datos.get("disponibilidad"),
-            datos.get("performance"),
-            datos.get("calidad"),
-            datos.get("oee"),
-            datos.get("porcentaje_stop"),
-            datos.get("porcentaje_scrap"),
-            datos.get("of"),
-            datos.get("turno"),
-            datos.get("fecha_hora")
-        )
-        
         cursor.execute(sql, values)
         log.debug(f"Insertado en oee: {datos}")
         return True
@@ -626,11 +630,13 @@ async def insertar_oee_directo(datos: Dict[str, Any]) -> bool:
         return False
     finally:
         try:
-            cursor.close()
+            if cursor:
+                cursor.close()
         except:
             pass
         try:
-            conn.close()
+            if conn:
+                conn.close()
         except:
             pass
 
@@ -700,11 +706,6 @@ async def run_estadisticas_service():
         while not _stop:
             ciclo_inicio = time.time()
             
-            # DETECCIÓN DE CAMBIO DE OF (cada 60 segundos)
-            if time.time() - ultima_deteccion_of >= 60:
-                await detectar_y_registrar_cambio_of(tags_mapping, of_anterior)
-                ultima_deteccion_of = time.time()
-            
             # Leer tags de estadísticas
             valores = await leer_tags_estadisticas(tags_mapping)
             
@@ -714,10 +715,20 @@ async def run_estadisticas_service():
             if datos:
                 of_actual = datos.get('of')
                 
-                # Actualizar OF anterior si cambió
-                if of_anterior != of_actual:
-                    log.info(f"Estadísticas - Cambio de OF detectado: {of_anterior} → {of_actual}")
+                # Inicializar of_anterior si es None
+                if of_anterior is None:
                     of_anterior = of_actual
+                
+                # DETECCIÓN DE CAMBIO DE OF (cada 60 segundos)
+                if time.time() - ultima_deteccion_of >= 60:
+                    cambio_detectado = await detectar_y_registrar_cambio_of(tags_mapping, of_anterior)
+                    ultima_deteccion_of = time.time()
+                    
+                    # Si se detectó cambio, actualizar of_anterior con la OF actual
+                    if cambio_detectado:
+                        if of_actual and of_actual != of_anterior:
+                            of_anterior = of_actual
+                            log.info(f"Estadísticas - of_anterior actualizado a: {of_anterior}")
                 
                 if insertar_estadisticas(datos):
                     registros_totales += 1
