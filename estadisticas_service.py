@@ -531,29 +531,108 @@ async def registrar_datos_finales_oee(datos_historicos: Dict[str, Any], of_anter
     Registra los datos finales de OEE desde HISTORICO_DATOS_ULTIMA_OF
     """
     try:
-        # Importar aquí para evitar import circular
-        from oee_service import insertar_oee
+        # Función para validar y convertir valores numéricos
+        def safe_numeric(value, default=0):
+            if value is None:
+                return default
+            if isinstance(value, (int, float)):
+                # Verificar si es NaN
+                if isinstance(value, float) and (value != value):  # NaN check
+                    return default
+                return value
+            # Si es string y representa NaN
+            if isinstance(value, str) and value.lower() == 'nan':
+                return default
+            try:
+                return float(value) if '.' in str(value) else int(value)
+            except:
+                return default
         
         datos_finales = {
-            "cant_paradas": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.CANT_PARADAS"),
-            "downtime_minutos": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.DownTime_Minutos"),
-            "downtime_minutos_externo": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.DownTime_Minutos_Externo"),
-            "disponibilidad": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.Disponibilidad"),
-            "performance": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.Performance"),
-            "calidad": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.Calidad"),
-            "oee": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.OEE"),
-            "porcentaje_stop": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.PorcentajeStop"),
-            "porcentaje_scrap": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.PorcentajeScrap"),
+            "cant_paradas": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.CANT_PARADAS")),
+            "downtime_minutos": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.DownTime_Minutos")),
+            "downtime_minutos_externo": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.DownTime_Minutos_Externo")),
+            "disponibilidad": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.Disponibilidad")),
+            "performance": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.Performance")),
+            "calidad": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.Calidad")),
+            "oee": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.OEE")),
+            "porcentaje_stop": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.PorcentajeStop")),
+            "porcentaje_scrap": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.PorcentajeScrap")),
             "of": str(of_anterior) if of_anterior else "DESCONOCIDA",
-            "turno": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.GENERAL.TURNO_ACTUAL"),
+            "turno": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.GENERAL.TURNO_ACTUAL")),
             "fecha_hora": dt.now()
         }
         
-        return insertar_oee(datos_finales)
+        # Insertar directamente sin import circular
+        return await insertar_oee_directo(datos_finales)
         
     except Exception as e:
         log.error(f"Error registrando datos finales de OEE: {e}")
         return False
+
+async def insertar_oee_directo(datos: Dict[str, Any]) -> bool:
+    """
+    Inserta datos de OEE en la base de datos sin dependencias circulares
+    """
+    if not datos:
+        return False
+    
+    conn = None
+    try:
+        conn = get_mysql_connection()
+        if not conn:
+            return False
+        
+        cursor = conn.cursor()
+        
+        sql = """
+        INSERT INTO oee (cant_paradas, downtime_minutos, downtime_minutos_externo,
+                        disponibilidad, performance, calidad, oee, porcentaje_stop,
+                        porcentaje_scrap, `of`, turno, fecha_hora)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        
+        values = (
+            datos.get("cant_paradas"),
+            datos.get("downtime_minutos"),
+            datos.get("downtime_minutos_externo"),
+            datos.get("disponibilidad"),
+            datos.get("performance"),
+            datos.get("calidad"),
+            datos.get("oee"),
+            datos.get("porcentaje_stop"),
+            datos.get("porcentaje_scrap"),
+            datos.get("of"),
+            datos.get("turno"),
+            datos.get("fecha_hora")
+        )
+        
+        cursor.execute(sql, values)
+        log.debug(f"Insertado en oee: {datos}")
+        return True
+        
+    except Exception as e:
+        log.error(f"Error insertando en oee: {e}")
+        # Intentar reconectar y reintentar una vez
+        try:
+            conn = verify_mysql_connection(None)
+            if conn:
+                cursor = conn.cursor()
+                cursor.execute(sql, values)
+                log.info(f"Reintentado insertado en oee: {datos}")
+                return True
+        except Exception as retry_e:
+            log.error(f"Error en reintento insertando oee: {retry_e}")
+        return False
+    finally:
+        try:
+            cursor.close()
+        except:
+            pass
+        try:
+            conn.close()
+        except:
+            pass
 
 def procesar_estadisticas(valores: Dict[str, Any]) -> Dict[str, Any]:
     """Procesa datos de estadísticas para inserción"""
