@@ -463,18 +463,35 @@ async def registrar_datos_finales_oee(datos_historicos: Dict[str, Any], of_anter
     Registra los datos finales de OEE desde HISTORICO_DATOS_ULTIMA_OF
     """
     try:
+        # Función para validar y convertir valores numéricos
+        def safe_numeric(value, default=0):
+            if value is None:
+                return default
+            if isinstance(value, (int, float)):
+                # Verificar si es NaN
+                if isinstance(value, float) and (value != value):  # NaN check
+                    return default
+                return value
+            # Si es string y representa NaN
+            if isinstance(value, str) and value.lower() == 'nan':
+                return default
+            try:
+                return float(value) if '.' in str(value) else int(value)
+            except:
+                return default
+        
         datos_finales = {
-            "cant_paradas": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.CANT_PARADAS"),
-            "downtime_minutos": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.DownTime_Minutos"),
-            "downtime_minutos_externo": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.DownTime_Minutos_Externo"),
-            "disponibilidad": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.Disponibilidad"),
-            "performance": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.Performance"),
-            "calidad": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.Calidad"),
-            "oee": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.OEE"),
-            "porcentaje_stop": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.PorcentajeStop"),
-            "porcentaje_scrap": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.PorcentajeScrap"),
+            "cant_paradas": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.CANT_PARADAS")),
+            "downtime_minutos": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.DownTime_Minutos")),
+            "downtime_minutos_externo": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.DownTime_Minutos_Externo")),
+            "disponibilidad": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.Disponibilidad")),
+            "performance": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.Performance")),
+            "calidad": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.Calidad")),
+            "oee": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.OEE")),
+            "porcentaje_stop": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.PorcentajeStop")),
+            "porcentaje_scrap": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.OEE.PorcentajeScrap")),
             "of": str(of_anterior) if of_anterior else "DESCONOCIDA",
-            "turno": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.GENERAL.TURNO_ACTUAL"),
+            "turno": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.GENERAL.TURNO_ACTUAL")),
             "fecha_hora": dt.now()
         }
         

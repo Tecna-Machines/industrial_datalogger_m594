@@ -486,20 +486,37 @@ async def registrar_datos_finales_estadisticas(datos_historicos: Dict[str, Any],
     Registra los datos finales de estadísticas desde HISTORICO_DATOS_ULTIMA_OF
     """
     try:
+        # Función para validar y convertir valores numéricos
+        def safe_numeric(value, default=0):
+            if value is None:
+                return default
+            if isinstance(value, (int, float)):
+                # Verificar si es NaN
+                if isinstance(value, float) and (value != value):  # NaN check
+                    return default
+                return value
+            # Si es string y representa NaN
+            if isinstance(value, str) and value.lower() == 'nan':
+                return default
+            try:
+                return float(value) if '.' in str(value) else int(value)
+            except:
+                return default
+        
         datos_finales = {
-            "buenas_totales": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.BuenasTotales"),
-            "malas_totales": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasTotales"),
-            "produccion_faltante": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.ProduccionFaltante"),
-            "malas_por_e1_qr": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E1_QR"),
-            "malas_por_e1_inspeccioninicial": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E1_InspeccionInicial"),
-            "malas_por_e3_verificacionintegral": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E3_VerificacionIntegral"),
-            "malas_por_e6_remacheysoldadura": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E6_RemacheYSoldadura"),
-            "malas_por_e10_presenciaacoples": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E10_PresenciaAcoples"),
-            "malas_por_e11_polonoutilizado": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E11_PoloNoUtilizado"),
-            "malas_por_e12_testalturatermica": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E12_TestAlturaTermica"),
-            "malas_por_e14_inspeccionfinal": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E14_InspeccionFinal"),
+            "buenas_totales": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.BuenasTotales")),
+            "malas_totales": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasTotales")),
+            "produccion_faltante": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.ProduccionFaltante")),
+            "malas_por_e1_qr": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E1_QR")),
+            "malas_por_e1_inspeccioninicial": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E1_InspeccionInicial")),
+            "malas_por_e3_verificacionintegral": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E3_VerificacionIntegral")),
+            "malas_por_e6_remacheysoldadura": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E6_RemacheYSoldadura")),
+            "malas_por_e10_presenciaacoples": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E10_PresenciaAcoples")),
+            "malas_por_e11_polonoutilizado": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E11_PoloNoUtilizado")),
+            "malas_por_e12_testalturatermica": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E12_TestAlturaTermica")),
+            "malas_por_e14_inspeccionfinal": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.ESTADISTICAS.MalasPor_E14_InspeccionFinal")),
             "of": str(of_anterior) if of_anterior else "DESCONOCIDA",
-            "turno": datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.GENERAL.TURNO_ACTUAL"),
+            "turno": safe_numeric(datos_historicos.get("OPC_DATOS.HISTORICO_DATOS_ULTIMA_OF.GENERAL.TURNO_ACTUAL")),
             "fecha_hora": dt.now()
         }
         
