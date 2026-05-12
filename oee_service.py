@@ -511,19 +511,36 @@ def procesar_oee(valores: Dict[str, Any]) -> Dict[str, Any]:
         log.warning(f"OEE - OF es None, no se registrará")
         return None
     
+    # Función para validar y convertir valores numéricos
+    def safe_numeric(value, default=0):
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            # Verificar si es NaN
+            if isinstance(value, float) and (value != value):  # NaN check
+                return default
+            return value
+        # Si es string y representa NaN
+        if isinstance(value, str) and value.lower() == 'nan':
+            return default
+        try:
+            return float(value) if '.' in str(value) else int(value)
+        except:
+            return default
+    
     # Mapear tags a nombres de columnas
     datos = {
-        "cant_paradas": valores.get("OPC_DATOS.OEE.CANT_PARADAS"),
-        "downtime_minutos": valores.get("OPC_DATOS.OEE.DownTime_Minutos"),
-        "downtime_minutos_externo": valores.get("OPC_DATOS.OEE.DownTime_Minutos_Externo"),
-        "disponibilidad": valores.get("OPC_DATOS.OEE.Disponibilidad"),
-        "performance": valores.get("OPC_DATOS.OEE.Performance"),
-        "calidad": valores.get("OPC_DATOS.OEE.Calidad"),
-        "oee": valores.get("OPC_DATOS.OEE.OEE"),
-        "porcentaje_stop": valores.get("OPC_DATOS.OEE.PorcentajeStop"),
-        "porcentaje_scrap": valores.get("OPC_DATOS.OEE.PorcentajeScrap"),
+        "cant_paradas": safe_numeric(valores.get("OPC_DATOS.OEE.CANT_PARADAS")),
+        "downtime_minutos": safe_numeric(valores.get("OPC_DATOS.OEE.DownTime_Minutos")),
+        "downtime_minutos_externo": safe_numeric(valores.get("OPC_DATOS.OEE.DownTime_Minutos_Externo")),
+        "disponibilidad": safe_numeric(valores.get("OPC_DATOS.OEE.Disponibilidad")),
+        "performance": safe_numeric(valores.get("OPC_DATOS.OEE.Performance")),
+        "calidad": safe_numeric(valores.get("OPC_DATOS.OEE.Calidad")),
+        "oee": safe_numeric(valores.get("OPC_DATOS.OEE.OEE")),
+        "porcentaje_stop": safe_numeric(valores.get("OPC_DATOS.OEE.PorcentajeStop")),
+        "porcentaje_scrap": safe_numeric(valores.get("OPC_DATOS.OEE.PorcentajeScrap")),
         "of": str(of_actual) if of_actual is not None else None,
-        "turno": valores.get("OPC_DATOS.GENERAL.TURNO_ACTUAL"),
+        "turno": safe_numeric(valores.get("OPC_DATOS.GENERAL.TURNO_ACTUAL")),
         "fecha_hora": dt.now()
     }
     

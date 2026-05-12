@@ -650,21 +650,38 @@ def procesar_estadisticas(valores: Dict[str, Any]) -> Dict[str, Any]:
         log.warning(f"Estadísticas - OF es None, no se registrará")
         return None
     
+    # Función para validar y convertir valores numéricos
+    def safe_numeric(value, default=0):
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            # Verificar si es NaN
+            if isinstance(value, float) and (value != value):  # NaN check
+                return default
+            return value
+        # Si es string y representa NaN
+        if isinstance(value, str) and value.lower() == 'nan':
+            return default
+        try:
+            return float(value) if '.' in str(value) else int(value)
+        except:
+            return default
+    
     # Mapear tags a nombres de columnas
     datos = {
-        "buenas_totales": valores.get("OPC_DATOS.ESTADISTICAS.BuenasTotales"),
-        "malas_totales": valores.get("OPC_DATOS.ESTADISTICAS.MalasTotales"),
-        "produccion_faltante": valores.get("OPC_DATOS.ESTADISTICAS.ProduccionFaltante"),
-        "malas_por_e1_qr": valores.get("OPC_DATOS.ESTADISTICAS.MalasPor_E1_QR"),
-        "malas_por_e1_inspeccioninicial": valores.get("OPC_DATOS.ESTADISTICAS.MalasPor_E1_InspeccionInicial"),
-        "malas_por_e3_verificacionintegral": valores.get("OPC_DATOS.ESTADISTICAS.MalasPor_E3_VerificacionIntegral"),
-        "malas_por_e6_remacheysoldadura": valores.get("OPC_DATOS.ESTADISTICAS.MalasPor_E6_RemacheYSoldadura"),
-        "malas_por_e10_presenciaacoples": valores.get("OPC_DATOS.ESTADISTICAS.MalasPor_E10_PresenciaAcoples"),
-        "malas_por_e11_polonoutilizado": valores.get("OPC_DATOS.ESTADISTICAS.MalasPor_E11_PoloNoUtilizado"),
-        "malas_por_e12_testalturatermica": valores.get("OPC_DATOS.ESTADISTICAS.MalasPor_E12_TestAlturaTermica"),
-        "malas_por_e14_inspeccionfinal": valores.get("OPC_DATOS.ESTADISTICAS.MalasPor_E14_InspeccionFinal"),
+        "buenas_totales": safe_numeric(valores.get("OPC_DATOS.ESTADISTICAS.BuenasTotales")),
+        "malas_totales": safe_numeric(valores.get("OPC_DATOS.ESTADISTICAS.MalasTotales")),
+        "produccion_faltante": safe_numeric(valores.get("OPC_DATOS.ESTADISTICAS.ProduccionFaltante")),
+        "malas_por_e1_qr": safe_numeric(valores.get("OPC_DATOS.ESTADISTICAS.MalasPor_E1_QR")),
+        "malas_por_e1_inspeccioninicial": safe_numeric(valores.get("OPC_DATOS.ESTADISTICAS.MalasPor_E1_InspeccionInicial")),
+        "malas_por_e3_verificacionintegral": safe_numeric(valores.get("OPC_DATOS.ESTADISTICAS.MalasPor_E3_VerificacionIntegral")),
+        "malas_por_e6_remacheysoldadura": safe_numeric(valores.get("OPC_DATOS.ESTADISTICAS.MalasPor_E6_RemacheYSoldadura")),
+        "malas_por_e10_presenciaacoples": safe_numeric(valores.get("OPC_DATOS.ESTADISTICAS.MalasPor_E10_PresenciaAcoples")),
+        "malas_por_e11_polonoutilizado": safe_numeric(valores.get("OPC_DATOS.ESTADISTICAS.MalasPor_E11_PoloNoUtilizado")),
+        "malas_por_e12_testalturatermica": safe_numeric(valores.get("OPC_DATOS.ESTADISTICAS.MalasPor_E12_TestAlturaTermica")),
+        "malas_por_e14_inspeccionfinal": safe_numeric(valores.get("OPC_DATOS.ESTADISTICAS.MalasPor_E14_InspeccionFinal")),
         "of": str(of_actual) if of_actual is not None else None,
-        "turno": valores.get("OPC_DATOS.GENERAL.TURNO_ACTUAL"),
+        "turno": safe_numeric(valores.get("OPC_DATOS.GENERAL.TURNO_ACTUAL")),
         "fecha_hora": dt.now()
     }
     
