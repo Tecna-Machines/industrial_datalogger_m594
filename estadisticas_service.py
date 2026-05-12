@@ -770,28 +770,32 @@ async def run_estadisticas_service():
             if espera > 0:
                 log.info(f"Estadísticas - Esperando {espera:.0f} segundos para próximo ciclo...")
                 # Usar sleep con verificación periódica de _stop y detección de OF
-                start_wait = time.time()
-                while time.time() - start_wait < espera and not _stop:
-                    await asyncio.sleep(1)  # Verificar cada segundo
-                    # Verificar cambio de OF durante la espera
-                    if time.time() - ultima_deteccion_of >= 60:
-                        try:
-                            cambio_detectado = await detectar_y_registrar_cambio_of(tags_mapping, of_anterior)
-                            ultima_deteccion_of = time.time()
-                            if cambio_detectado:
-                                # Leer OF actual durante la espera
-                                valores_temp = await leer_tags_estadisticas(tags_mapping)
-                                datos_temp = procesar_estadisticas(valores_temp)
-                                if datos_temp:
-                                    of_actual_temp = datos_temp.get('of')
-                                    if of_actual_temp and of_actual_temp != of_anterior:
-                                        log.info(f"Estadísticas - Actualizando of_anterior durante espera: {of_anterior} → {of_actual_temp}")
-                                        of_anterior = of_actual_temp
-                        except Exception as e:
-                            log.error(f"Estadísticas - Error en detección de OF durante espera: {e}")
-                            # Continuar con el bucle de espera
-                            continue
-                log.info(f"Estadísticas - Espera terminada, _stop={_stop}")
+                try:
+                    start_wait = time.time()
+                    while time.time() - start_wait < espera and not _stop:
+                        await asyncio.sleep(1)  # Verificar cada segundo
+                        # Verificar cambio de OF durante la espera
+                        if time.time() - ultima_deteccion_of >= 60:
+                            try:
+                                cambio_detectado = await detectar_y_registrar_cambio_of(tags_mapping, of_anterior)
+                                ultima_deteccion_of = time.time()
+                                if cambio_detectado:
+                                    # Leer OF actual durante la espera
+                                    valores_temp = await leer_tags_estadisticas(tags_mapping)
+                                    datos_temp = procesar_estadisticas(valores_temp)
+                                    if datos_temp:
+                                        of_actual_temp = datos_temp.get('of')
+                                        if of_actual_temp and of_actual_temp != of_anterior:
+                                            log.info(f"Estadísticas - Actualizando of_anterior durante espera: {of_anterior} → {of_actual_temp}")
+                                            of_anterior = of_actual_temp
+                            except Exception as e:
+                                log.error(f"Estadísticas - Error en detección de OF durante espera: {e}")
+                                # Continuar con el bucle de espera
+                                continue
+                    log.info(f"Estadísticas - Espera terminada, _stop={_stop}")
+                except Exception as e:
+                    log.error(f"Estadísticas - Error en bucle de espera: {e}")
+                    log.info(f"Estadísticas - Continuando con próximo ciclo debido a error en espera")
             else:
                 log.warning(f"Estadísticas - Espera es 0 o negativa: {espera}")
     
