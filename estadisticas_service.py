@@ -760,14 +760,18 @@ async def run_estadisticas_service():
                 # Usar sleep con verificación periódica de _stop y detección de OF
                 try:
                     start_wait = time.time()
+                    proxima_deteccion_of = ultima_deteccion_of + 60  # Próxima detección en 60 segundos
+                    
                     while time.time() - start_wait < espera and not _stop:
                         await asyncio.sleep(1)  # Verificar cada segundo
-                        # Verificar cambio de OF durante la espera
-                        if time.time() - ultima_deteccion_of >= 60:
+                        
+                        # Verificar si es tiempo de detectar cambio de OF
+                        if time.time() >= proxima_deteccion_of:
                             try:
                                 log.info(f"Estadísticas - DEBUG: Ejecutando detección de OF, _stop={_stop}")
                                 cambio_detectado = await detectar_y_registrar_cambio_of(tags_mapping, of_anterior)
                                 ultima_deteccion_of = time.time()
+                                proxima_deteccion_of = ultima_deteccion_of + 60  # Programar próxima detección
                                 if cambio_detectado:
                                     # Leer OF actual durante la espera
                                     valores_temp = await leer_tags_estadisticas(tags_mapping)
