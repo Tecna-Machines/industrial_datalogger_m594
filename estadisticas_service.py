@@ -769,7 +769,9 @@ async def run_estadisticas_service():
                         if time.time() >= proxima_deteccion_of:
                             try:
                                 log.info(f"Estadísticas - DEBUG: Ejecutando detección de OF, _stop={_stop}")
+                                log.info(f"Estadísticas - DEBUG: ANTES de detectar_y_registrar_cambio_of")
                                 cambio_detectado = await detectar_y_registrar_cambio_of(tags_mapping, of_anterior)
+                                log.info(f"Estadísticas - DEBUG: DESPUÉS de detectar_y_registrar_cambio_of, resultado={cambio_detectado}")
                                 ultima_deteccion_of = time.time()
                                 proxima_deteccion_of = ultima_deteccion_of + 60  # Programar próxima detección
                                 if cambio_detectado:
@@ -781,8 +783,10 @@ async def run_estadisticas_service():
                                         if of_actual_temp and of_actual_temp != of_anterior:
                                             log.info(f"Estadísticas - Actualizando of_anterior durante espera: {of_anterior} → {of_actual_temp}")
                                             of_anterior = of_actual_temp
+                                log.info(f"Estadísticas - DEBUG: Continuando bucle de espera después de detección")
                             except Exception as e:
                                 log.error(f"Estadísticas - Error en detección de OF durante espera: {e}")
+                                log.info(f"Estadísticas - DEBUG: Continuando bucle de espera después de excepción")
                                 # Continuar con el bucle de espera
                                 continue
                     log.info(f"Estadísticas - Espera terminada, _stop={_stop}")
