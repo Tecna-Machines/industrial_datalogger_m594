@@ -766,6 +766,7 @@ async def run_estadisticas_service():
             # Esperar para próximo ciclo (3600 segundos = 1 hora)
             ciclo_tiempo = time.time() - ciclo_inicio
             espera = max(300, 3600.0 - ciclo_tiempo)  # Mínimo 5 minutos
+            log.info(f"Estadísticas - Ciclo completado en {ciclo_tiempo:.1f}s, esperando {espera:.0f}s...")
             if espera > 0:
                 log.info(f"Estadísticas - Esperando {espera:.0f} segundos para próximo ciclo...")
                 # Usar sleep con verificación periódica de _stop y detección de OF
@@ -785,6 +786,9 @@ async def run_estadisticas_service():
                                 if of_actual_temp and of_actual_temp != of_anterior:
                                     log.info(f"Estadísticas - Actualizando of_anterior durante espera: {of_anterior} → {of_actual_temp}")
                                     of_anterior = of_actual_temp
+                log.info(f"Estadísticas - Espera terminada, _stop={_stop}")
+            else:
+                log.warning(f"Estadísticas - Espera es 0 o negativa: {espera}")
     
     finally:
         await close_opc_client()
