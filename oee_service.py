@@ -605,22 +605,11 @@ async def run_oee_service():
                 if of_anterior is None:
                     of_anterior = of_actual
                 
-                # DETECCIÓN DE CAMBIO DE OF (cada 60 segundos)
-                if time.time() - ultima_deteccion_of >= 60:
-                    cambio_detectado = await detectar_y_registrar_cambio_of(tags_mapping, of_anterior)
-                    ultima_deteccion_of = time.time()
-                    
-                    # Si se detectó cambio, actualizar of_anterior inmediatamente con la OF actual
-                    if cambio_detectado:
-                        if of_actual and of_actual != of_anterior:
-                            of_anterior = of_actual
-                            log.info(f"OEE - of_anterior actualizado a: {of_anterior}")
-                
                 if insertar_oee(datos):
                     registros_totales += 1
                     log.info(f"OEE - Registrado para OF {datos.get('of')}")
                 else:
-                    log.error(f"OEE - Error insertando para OF {datos.get('of')}")
+                    log.warning("OEE - Falló la inserción de datos.")
             
             ciclos_totales += 1
             
