@@ -737,19 +737,6 @@ async def run_estadisticas_service():
                     of_anterior = of_actual
                     log.info(f"Estadísticas - of_anterior inicializado a: {of_anterior}")
                 
-                # DETECCIÓN DE CAMBIO DE OF (cada 60 segundos)
-                if time.time() - ultima_deteccion_of >= 60:
-                    cambio_detectado = await detectar_y_registrar_cambio_of(tags_mapping, of_anterior)
-                    ultima_deteccion_of = time.time()
-                    
-                    # Si se detectó cambio, actualizar of_anterior inmediatamente con la OF actual
-                    if cambio_detectado:
-                        if of_actual and of_actual != of_anterior:
-                            log.info(f"Estadísticas - Actualizando of_anterior: {of_anterior} → {of_actual}")
-                            of_anterior = of_actual
-                        else:
-                            log.info(f"Estadísticas - Cambio detectado pero of_actual es None o igual: of_actual={of_actual}, of_anterior={of_anterior}")
-                
                 if insertar_estadisticas(datos):
                     registros_totales += 1
                     log.info(f"Estadísticas - Registrado para OF {datos.get('of')}")
